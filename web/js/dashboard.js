@@ -1,0 +1,758 @@
+// Vehicle Type Icons Mapping
+const VEHICLE_ICONS = {
+    car: '🚗',
+    truck: '🚛',
+    van: '🚐',
+    motorcycle: '🏍️',
+    bus: '🚌',
+    person: '🚶',
+    airplane: '✈️',
+    bicycle: '🚲',
+    boat: '🚢',
+    scooter: '🛴',
+    tractor: '🚜',
+    arrow: '▲', // This will be rendered as SVG on map
+    other: '📦'
+};
+
+// State
+let map = null;
+let markers = {};
+let polylines = {};
+let ws = null;
+let devices = [];
+let selectedDevice = null;
+let historyDeviceId = null;
+let playbackInterval = null;
+let historyData = [];
+let historyIndex = 0;
+let loadedAlerts = [];
+let currentUser = null;
+
+// Helper to format dates to local time for display
+function formatDateToLocal(dateString) {
+    if (!dateString) return 'N/A';
+    if (dateString.indexOf('Z') === -1 && dateString.indexOf('+') === -1) {
+        dateString += 'Z';
+    }
+    return new Date(dateString).toLocaleString();
+}
+
+// Helper to format time ago (human readable)
+function timeAgo(dateString) {
+    if (!dateString) return 'Never';
+    
+    // Ensure UTC parsing
+    if (dateString.indexOf('Z') === -1 && dateString.indexOf('+') === -1) {
+        dateString += 'Z';
+    }
+    
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+
+    if (seconds < 30) return 'Just now';
+    
+    const intervals = {
+        year: 31536000,
+        month: 2592000,
+        week: 604800,
+        day: 86400,
+        hour: 3600,
+        minute: 60
+    };
+
+    for (let [unit, secondsInUnit] of Object.entries(intervals)) {
+        const count = Math.floor(seconds / secondsInUnit);
+        if (count >= 1) {
+            return `${count} ${unit}${count > 1 ? 's' : ''} ago`;
+        }
+    }
+    return 'Just now';
+}
+
+// Helper to format mileage
+function formatDistance(meters) {
+    if (meters === undefined || meters === null) return '0 km';
+    return `${parseFloat(meters).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} km`;
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', async () => {
+    checkLogin(); 
+    initMap();
+    await loadDevices();
+    connectWebSocket();
+    loadAlerts(); // Load alerts immediately on startup
+    startPeriodicUpdate();
+    
+    // Set Username in sidebar
+    const username = localStorage.getItem('username');
+    if (username) {
+        const userDisplay = document.getElementById('userNameDisplay');
+        if (userDisplay) userDisplay.textContent = username;
+    }
+    
+    // Mutation Observer for Alert Button
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            const count = parseInt(mutation.target.textContent) || 0;
+            const btn = document.getElementById('alertsBtn');
+            if (btn) {
+                if (count > 0) {
+                    btn.classList.add('has-alerts');
+                } else {
+                    btn.classList.remove('has-alerts');
+                }
+            }
+        });
+    });
+    
+    const alertCountSpan = document.getElementById('alertCount');
+    if (alertCountSpan) {
+        observer.observe(alertCountSpan, { childList: true, characterData: true, subtree: true });
+    }
+    
+    // Start local time update interval (every 60s) for "time ago"
+    setInterval(updateSidebarTimes, 60000);
+});
+
+// Login Check Function
+function checkLogin() {
+    const token = localStorage.getItem('auth_token');
+    const userId = localStorage.getItem('user_id');
+    
+    if (!token || !userId) {
+        window.location.href = 'login.html';
+    } else {
+        currentUser = { id: userId };
+    }
+}
+
+// Logout Function
+function handleLogout() {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_id');
+    localStorage.removeItem('username');
+    window.location.href = 'login.html';
+}
+
+// Initialize Leaflet Map
+function initMap() {
+    map = L.map('map').setView([37.7749, -122.4194], 12);
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19
+    }).addTo(map);
+}
+
+// Load Devices
+async function loadDevices() {
+    try {
+        const userId = localStorage.getItem('user_id');
+        const response = await fetch(`${API_BASE}/devices?user_id=${userId}`);
+        if (!response.ok) {
+            if (response.status === 401) {
+                handleLogout(); // Token invalid
+                return;
+            }
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        devices = await response.json();
+        
+        renderDeviceList();
+        
+        // Load state for each device
+        for (const device of devices) {
+            await loadDeviceState(device.id);
+        }
+        
+        updateStats();
+    } catch (error) {
+        console.error('Error loading devices:', error);
+        showAlert({ title: 'Connection Failed', message: 'Unable to connect to the server.', type: 'error' });
+    }
+}
+
+// Load Device State
+async function loadDeviceState(deviceId) {
+    try {
+        const response = await fetch(`${API_BASE}/devices/${deviceId}/state`);
+        if (response.ok) {
+            const state = await response.json();
+            
+            // Merge state into device object
+            const deviceIndex = devices.findIndex(d => d.id === deviceId);
+            if (deviceIndex !== -1) {
+                devices[deviceIndex] = { ...devices[deviceIndex], ...state };
+                updateDeviceMarker(deviceId, devices[deviceIndex]);
+                updateSidebarCard(deviceId); // Update sidebar immediately
+            }
+        }
+    } catch (error) {
+        console.error(`Error loading state for device ${deviceId}:`, error);
+    }
+}
+
+// Render Device List
+function renderDeviceList() {
+    const list = document.getElementById('deviceList');
+    list.innerHTML = '';
+    
+    if (devices.length === 0) {
+        list.innerHTML = '<div style="padding: 1rem; color: var(--text-muted); text-align: center;">No devices assigned to this user.</div>';
+        return;
+    }
+    
+    devices.forEach(device => {
+        const card = document.createElement('div');
+        card.className = 'device-card';
+        card.id = `device-card-${device.id}`; // Add ID for easier updates
+        card.onclick = () => selectDevice(device.id);
+        
+        const vehicleIcon = VEHICLE_ICONS[device.vehicle_type] || '📍';
+        
+        card.innerHTML = getDeviceCardContent(device, vehicleIcon);
+        
+        list.appendChild(card);
+    });
+}
+
+// Helper to generate card content (used for initial render and updates)
+function getDeviceCardContent(device, icon) {
+    const ignIcon = device.ignition_on ? '🔥' : '🅿️';
+    const statusClass = device.is_online ? 'online' : 'offline';
+    const statusText = device.is_online ? 'Online' : 'Offline';
+    const lastSeen = timeAgo(device.last_update);
+    const mileage = formatDistance(device.total_odometer);
+
+    return `
+        <div class="device-header">
+            <div class="device-name">${icon} ${device.name}</div>
+            <div class="device-meta">
+                <span class="ignition-icon" id="ign-icon-${device.id}">${ignIcon}</span>
+                <div class="device-status ${statusClass}" id="status-${device.id}">
+                    ${statusText}
+                </div>
+            </div>
+        </div>
+        <div class="device-info">
+            <div class="device-info-row">
+                <span class="info-label">Last Seen</span>
+                <span class="info-value" id="last-seen-${device.id}">${lastSeen}</span>
+            </div>
+            <div class="device-info-row">
+                <span class="info-label">Mileage</span>
+                <span class="info-value" id="mileage-${device.id}">${mileage}</span>
+            </div>
+        </div>
+        <div class="device-actions" style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+            <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); openHistoryModal(${device.id})">🕒 History</button>
+        </div>
+    `;
+}
+
+function updateSidebarCard(deviceId) {
+    const device = devices.find(d => d.id === deviceId);
+    if (!device) return;
+
+    const card = document.getElementById(`device-card-${deviceId}`);
+    if (card) {
+        const vehicleIcon = VEHICLE_ICONS[device.vehicle_type] || '📍';
+        // Only update innerHTML if card exists, effectively re-rendering with new state
+        card.innerHTML = getDeviceCardContent(device, vehicleIcon);
+        
+        // Re-apply active class if selected
+        if (selectedDevice === deviceId) {
+            card.classList.add('active');
+        }
+    }
+}
+
+// Function to update just the times in the sidebar (called every minute)
+function updateSidebarTimes() {
+    devices.forEach(device => {
+        const el = document.getElementById(`last-seen-${device.id}`);
+        if (el && device.last_update) {
+            el.textContent = timeAgo(device.last_update);
+        }
+    });
+}
+
+// Select Device
+function selectDevice(deviceId) {
+    selectedDevice = deviceId;
+    document.querySelectorAll('.device-card').forEach(card => card.classList.remove('active'));
+    const card = document.getElementById(`device-card-${deviceId}`);
+    if(card) card.classList.add('active');
+    
+    const marker = markers[deviceId];
+    if (marker) {
+        map.setView(marker.getLatLng(), 15);
+        marker.openPopup();
+    }
+}
+
+// Helper to generate custom marker HTML
+function getMarkerHtml(type, heading, ignitionOn) {
+    let iconContent = VEHICLE_ICONS[type] || '📍';
+    let rotationStyle = '';
+
+    if (type === 'arrow') {
+        // Clear high-contrast SVG arrow
+        iconContent = `
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" 
+                 style="transform: rotate(${heading}deg); transition: transform 0.3s; filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.5));">
+                <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" 
+                      fill="#3b82f6" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+            </svg>
+        `;
+    } else {
+        iconContent = `<div style="font-size: 28px;">${iconContent}</div>`;
+    }
+
+    return `
+        <div class="marker-container" style="position: relative; display: flex; align-items: center; justify-content: center;">
+            ${iconContent}
+            <div style="position: absolute; bottom: -2px; right: -2px; width: 10px; height: 10px; background: ${ignitionOn ? 'var(--accent-success)' : 'var(--text-muted)'}; border-radius: 50%; border: 2px solid var(--bg-primary);"></div>
+        </div>
+    `;
+}
+
+// Update Device Marker
+function updateDeviceMarker(deviceId, state) {
+    if (!state.last_latitude || !state.last_longitude) return;
+    
+    const position = [state.last_latitude, state.last_longitude];
+    const device = devices.find(d => d.id === deviceId);
+    const deviceName = device ? device.name : 'Unknown Device';
+    const vehicleIcon = VEHICLE_ICONS[device?.vehicle_type] || '📍';
+    const heading = state.last_course || 0;
+    
+    // FIXED: Updated Popup content to include Coords, Sats, Alt
+    const popupContent = `
+        <strong>${deviceName}</strong><br>
+        Lat: ${state.last_latitude.toFixed(5)}, Lon: ${state.last_longitude.toFixed(5)}<br>
+        Satellites: ${state.satellites || 0} | Alt: ${Math.round(state.last_altitude || 0)}m<br>
+        Speed: ${state.last_speed !== undefined ? Number(state.last_speed).toFixed(1) : 0} km/h<br>
+        ${state.ignition_on ? '🟢 Ignition ON' : '🔴 Ignition OFF'}<br>
+        <small style="color:var(--text-muted);">Updated: ${formatDateToLocal(state.last_update)}</small>
+    `;
+
+    const icon = L.divIcon({
+        html: getMarkerHtml(device?.vehicle_type, heading, state.ignition_on),
+        className: 'custom-marker',
+        iconSize: [36, 36],
+        iconAnchor: [18, 18]
+    });
+    
+    if (markers[deviceId]) {
+        markers[deviceId].setLatLng(position);
+        markers[deviceId].setIcon(icon);
+        markers[deviceId].setPopupContent(popupContent);
+    } else {
+        markers[deviceId] = L.marker(position, { icon }).bindPopup(popupContent).addTo(map);
+    }
+    
+    const deviceIndex = devices.findIndex(d => d.id === deviceId);
+    if (deviceIndex !== -1) {
+        if (!state.hasOwnProperty('is_online') && state.last_latitude) state.is_online = true;
+        devices[deviceIndex] = { ...devices[deviceIndex], ...state };
+    }
+}
+
+// WebSocket Connection
+function connectWebSocket() {
+    const userId = localStorage.getItem('user_id');
+    if (!userId) return;
+
+    // Use static config from config.js
+    const wsUrl = `${WS_BASE_URL}${userId}`;
+    
+    console.log('Connecting to WebSocket:', wsUrl);
+    ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => { 
+        console.log('WebSocket connected');
+        // document.getElementById('connectionStatus').textContent = 'Connected'; // Element removed from UI
+    };
+    
+    ws.onmessage = (event) => {
+        try {
+            const message = JSON.parse(event.data);
+            handleWebSocketMessage(message);
+        } catch (e) {
+            console.error('Error parsing WS message:', e);
+        }
+    };
+    
+    ws.onerror = (e) => { 
+        console.error('WS Error:', e); 
+    };
+    
+    ws.onclose = (e) => { 
+        console.log('WebSocket disconnected, reconnecting...', e.reason);
+        // document.getElementById('connectionStatus').textContent = 'Disconnected';
+        setTimeout(connectWebSocket, 5000); 
+    };
+}
+
+function handleWebSocketMessage(message) {
+    if (message.type === 'position_update') {
+        const devIdx = devices.findIndex(d => d.id === message.device_id);
+        if (devIdx > -1) {
+            devices[devIdx] = { ...devices[devIdx], ...message.data };
+            updateDeviceMarker(message.device_id, devices[devIdx]);
+            updateSidebarCard(message.device_id);
+        }
+        updateStats();
+    } else if (message.type === 'alert') {
+        let title = message.data.type.replace('_', ' ').toUpperCase();
+        if (message.data.type === 'custom' && message.data.alert_metadata?.name) title = message.data.alert_metadata.name;
+        showAlert({ title: title, message: message.data.message, type: message.data.severity || 'info' });
+        loadAlerts();
+    }
+}
+
+// --- HISTORY FUNCTIONS ---
+function openHistoryModal(deviceId) {
+    historyDeviceId = deviceId;
+    setHistoryRange(24);
+    document.getElementById('historyModal').classList.add('active');
+}
+
+function closeHistoryModal() { document.getElementById('historyModal').classList.remove('active'); }
+
+function setHistoryRange(hours) {
+    const now = new Date();
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    const start = new Date(now.getTime() - hours * 60 * 60 * 1000);
+    
+    const toLocalISO = (date) => {
+        const tzOffset = date.getTimezoneOffset() * 60000;
+        return new Date(date.getTime() - tzOffset).toISOString().slice(0, 16);
+    };
+
+    document.getElementById('historyStart').value = toLocalISO(start);
+    document.getElementById('historyEnd').value = toLocalISO(end);
+}
+
+async function handleHistorySubmit(e) {
+    e.preventDefault();
+    const start = new Date(document.getElementById('historyStart').value);
+    const end = new Date(document.getElementById('historyEnd').value);
+    await loadHistory(historyDeviceId, start, end);
+    closeHistoryModal();
+}
+
+async function loadHistory(deviceId, startTime, endTime) {
+    if (polylines['history']) map.removeLayer(polylines['history']);
+    if (markers['history_pos']) map.removeLayer(markers['history_pos']);
+    stopPlayback();
+
+    // FIXED: Hide live marker for this device when history loads
+    if (markers[deviceId]) {
+        markers[deviceId].remove();
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/positions/history`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId, start_time: startTime.toISOString(), end_time: endTime.toISOString(), max_points: 2000 })
+        });
+        const data = await response.json();
+        historyData = data.features;
+        historyIndex = 0;
+        if (historyData.length === 0) { showAlert({ title: 'History', message: 'No data found.', type: 'warning' }); return; }
+        document.getElementById('historySlider').max = historyData.length - 1;
+        document.getElementById('historySlider').value = 0;
+        polylines['history'] = L.polyline(historyData.map(f => [f.geometry.coordinates[1], f.geometry.coordinates[0]]), { color: '#ef4444', weight: 4, opacity: 0.8 }).addTo(map);
+        map.fitBounds(polylines['history'].getBounds());
+        
+        // Correcting ID for new separate structure (footer is now separate from sidebar)
+        // Actually, we need to show the history footer
+        const footer = document.getElementById('historyControlsSidebar');
+        if (footer) footer.style.display = 'flex';
+        
+        // Hide regular list
+        document.getElementById('sidebarDeviceList').style.display = 'none';
+        
+        // Show History Details section
+        document.getElementById('sidebarHistoryDetails').style.display = 'block';
+        
+        const device = devices.find(d => d.id === deviceId);
+        document.getElementById('historyDeviceName').textContent = device ? device.name : 'History Details';
+        updatePlaybackUI();
+    } catch (error) { showAlert({ title: 'Error', message: 'Failed to load history.', type: 'error' }); }
+}
+
+function exitHistoryMode() {
+    stopPlayback();
+    if (polylines['history']) map.removeLayer(polylines['history']);
+    if (markers['history_pos']) map.removeLayer(markers['history_pos']);
+    
+    // FIXED: Restore live marker when exiting history mode
+    if (markers[historyDeviceId]) {
+        markers[historyDeviceId].addTo(map);
+    }
+
+    // Hide history footer
+    const footer = document.getElementById('historyControlsSidebar');
+    if (footer) footer.style.display = 'none';
+
+    document.getElementById('sidebarDeviceList').style.display = 'block';
+    document.getElementById('sidebarHistoryDetails').style.display = 'none';
+}
+
+function togglePlayback() { if (playbackInterval) stopPlayback(); else startPlayback(); }
+
+function startPlayback() {
+    if (historyData.length === 0) return;
+    document.getElementById('playbackBtn').textContent = '⏸️';
+    if (!markers['history_pos']) createHistoryMarker();
+    playbackInterval = setInterval(() => {
+        if (historyIndex >= historyData.length - 1) { stopPlayback(); return; }
+        historyIndex++;
+        updatePlaybackUI();
+    }, 100);
+}
+
+function stopPlayback() {
+    if (playbackInterval) { clearInterval(playbackInterval); playbackInterval = null; document.getElementById('playbackBtn').textContent = '▶️'; }
+}
+
+function seekHistory(value) { historyIndex = parseInt(value); stopPlayback(); updatePlaybackUI(); }
+function stepHistory(delta) {
+    stopPlayback();
+    historyIndex = Math.max(0, Math.min(historyData.length - 1, historyIndex + delta));
+    updatePlaybackUI();
+}
+
+function updatePlaybackUI() {
+    if (historyData.length === 0) return;
+    const feature = historyData[historyIndex];
+    const p = feature.properties;
+    const position = [feature.geometry.coordinates[1], feature.geometry.coordinates[0]];
+    const time = formatDateToLocal(p.time);
+    const heading = p.course || 0;
+    const device = devices.find(d => d.id === historyDeviceId);
+
+    document.getElementById('historySlider').value = historyIndex;
+    document.getElementById('historyTimestamp').textContent = time;
+    
+    if (!markers['history_pos']) createHistoryMarker();
+    
+    markers['history_pos'].setLatLng(position).setIcon(L.divIcon({
+        html: getMarkerHtml(device?.vehicle_type, heading, p.ignition),
+        className: 'history-marker',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+    })).bindPopup(`<strong>${time}</strong><br>Speed: ${p.speed} km/h<br>Alt: ${p.altitude} m`);
+    
+    updatePointDetails(feature);
+}
+
+function updatePointDetails(feature) {
+    const p = feature.properties;
+    const content = document.getElementById('pointDetailsContent');
+    
+    // FIXED: Replaced 'Time' with 'Heading' in the first detail-item
+    let html = `
+        <div class="detail-grid">
+            <div class="detail-item"><span class="detail-key">Heading</span><div class="detail-val">${(p.course || 0).toFixed(0)}°</div></div>
+            <div class="detail-item"><span class="detail-key">Speed</span><div class="detail-val">${(p.speed || 0).toFixed(1)} km/h</div></div>
+            <div class="detail-item"><span class="detail-key">Lat/Lon</span><div class="detail-val">${feature.geometry.coordinates[1].toFixed(5)}, ${feature.geometry.coordinates[0].toFixed(5)}</div></div>
+            <div class="detail-item"><span class="detail-key">Altitude</span><div class="detail-val">${(p.altitude || 0).toFixed(0)} m</div></div>
+            <div class="detail-item"><span class="detail-key">Satellites</span><div class="detail-val">${p.satellites || 0}</div></div>
+            <div class="detail-item"><span class="detail-key">Ignition</span><div class="detail-val" style="color: ${p.ignition ? 'var(--accent-success)' : 'var(--text-muted)'}">${p.ignition ? 'ON' : 'OFF'}</div></div>
+        </div>
+    `;
+    if (p.sensors && Object.keys(p.sensors).length > 0) {
+        html += '<h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem;">Attributes</h4>';
+        html += '<table class="attr-table"><tbody>';
+        Object.keys(p.sensors).sort().forEach(key => { html += `<tr><td class="attr-key">${key}</td><td class="attr-val">${p.sensors[key]}</td></tr>`; });
+        html += '</tbody></table>';
+    } else html += '<div style="text-align: center; color: var(--text-muted); padding: 1rem; font-size: 0.875rem;">No additional attributes</div>';
+    content.innerHTML = html;
+}
+
+function createHistoryMarker() {
+    const device = devices.find(d => d.id === historyDeviceId);
+    const vehicleIcon = VEHICLE_ICONS[device?.vehicle_type] || '🟣';
+    const heading = historyData[historyIndex].properties.course || 0;
+    const rotationStyle = (device?.vehicle_type === 'arrow') ? `transform: rotate(${heading}deg);` : '';
+
+    const icon = L.divIcon({
+        html: `<div style="font-size: 28px; ${rotationStyle}">${vehicleIcon}</div>`,
+        className: 'history-marker',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+    });
+    const startPos = historyData[historyIndex].geometry.coordinates;
+    markers['history_pos'] = L.marker([startPos[1], startPos[0]], { icon }).addTo(map);
+}
+
+function updateStats() {
+    // Simplified stats logic as panel was removed, but keeping function to avoid errors
+    const onlineCount = devices.filter(d => d.is_online).length;
+}
+
+async function loadAlerts() {
+    try {
+        // FIXED: Use user_id from localStorage
+        const userId = localStorage.getItem('user_id');
+        const response = await fetch(`${API_BASE}/alerts?user_id=${userId}&unread_only=true`);
+        loadedAlerts = await response.json();
+        
+        // Fix: Check length for displaying number inside parentheses
+        const countEl = document.getElementById('alertCount');
+        if (loadedAlerts.length > 0) {
+            countEl.textContent = loadedAlerts.length;
+            countEl.style.display = 'inline';
+        } else {
+            countEl.textContent = '0';
+            countEl.style.display = 'inline'; // Always show 0 if loaded
+        }
+
+        const list = document.getElementById('alertsList');
+        list.innerHTML = '';
+        
+        if (loadedAlerts.length === 0) {
+            list.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-muted);">No alerts</div>';
+            return;
+        }
+        
+        loadedAlerts.forEach(alert => {
+            const item = document.createElement('div');
+            item.className = `alert-item ${alert.severity}`;
+            const icon = { 'speeding': '⚡', 'geofence_enter': '📍', 'geofence_exit': '🚪', 'offline': '📡', 'towing': '🚨' }[alert.alert_type] || '🔔';
+            
+            let title = alert.alert_type.replace('_', ' ').toUpperCase();
+            let messageText = alert.message;
+
+            if (alert.alert_type === 'custom' && alert.alert_metadata) {
+                if (alert.alert_metadata.name) {
+                    title = alert.alert_metadata.name;
+                }
+                if (alert.alert_metadata.rule) {
+                    messageText = alert.alert_metadata.rule;
+                }
+            }
+            
+            item.innerHTML = `
+                <div class="alert-icon">${icon}</div>
+                <div class="alert-content">
+                    <div class="alert-title">${title}</div>
+                    <div class="alert-message">${messageText}</div>
+                    <div class="alert-time">${formatDateToLocal(alert.created_at)}</div>
+                </div>
+                <button class="alert-dismiss" onclick="dismissAlert(${alert.id})">✕</button>
+            `;
+            
+            list.appendChild(item);
+        });
+    } catch (error) {
+        console.error('Error loading alerts:', error);
+    }
+}
+
+function openAlertsModal() {
+    loadAlerts();
+    document.getElementById('alertsModal').classList.add('active');
+}
+
+function closeAlertsModal() {
+    document.getElementById('alertsModal').classList.remove('active');
+}
+
+async function dismissAlert(alertId) {
+    try {
+        const res = await fetch(`${API_BASE}/alerts/${alertId}/read`, { method: 'POST' });
+        if (res.ok) loadAlerts();
+    } catch (e) {}
+}
+
+async function clearAllAlerts() {
+    if (loadedAlerts.length === 0) return;
+    if (!confirm('Mark all alerts as read?')) return;
+    
+    for (const alert of loadedAlerts) {
+        try {
+            await fetch(`${API_BASE}/alerts/${alert.id}/read`, { method: 'POST' });
+        } catch (e) {
+            console.error('Failed to clear alert', alert.id, e);
+        }
+    }
+    
+    loadAlerts();
+    showAlert({ title: 'Success', message: 'All alerts cleared', type: 'success' });
+}
+
+function closeDeviceModal() {
+    document.getElementById('deviceModal').classList.remove('active');
+}
+
+// Generic Alert/Toast Function
+function showAlert(data) {
+    const message = typeof data === 'string' ? data : data.message;
+    const title = data.title || 'Notification';
+    const type = data.type || 'info';
+    
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast`;
+    
+    // Icons
+    const icons = {
+        'success': '✓',
+        'error': '✕',
+        'warning': '⚠',
+        'info': 'ℹ'
+    };
+    
+    toast.innerHTML = `
+        <div class="toast-icon">${icons[type] || 'ℹ'}</div>
+        <div class="toast-content">
+            <div class="toast-title">${title}</div>
+            <div class="toast-message">${message}</div>
+        </div>
+    `;
+    
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.animation = 'slideInRight 0.3s reverse forwards';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Toggle Sidebar function
+function toggleSidebar() {
+    document.querySelector('.dashboard').classList.toggle('sidebar-hidden');
+    setTimeout(() => {
+        map.invalidateSize();
+    }, 300);
+}
+
+// Periodic Updates
+function startPeriodicUpdate() {
+    setInterval(() => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            // Fallback to polling if WebSocket is down
+            devices.forEach(device => loadDeviceState(device.id));
+        }
+        loadAlerts();
+    }, 30000); // Every 30 seconds
+}
+
+// Traffic & Satellite (placeholder functions)
+function toggleTraffic() {
+    alert('Traffic layer not implemented in demo');
+}
+
+function toggleSatellite() {
+    alert('Satellite view not implemented in demo');
+}

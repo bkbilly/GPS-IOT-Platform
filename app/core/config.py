@@ -20,11 +20,7 @@ class Settings(BaseSettings):
     
     # Network Servers - Protocol Specific Ports
     tcp_host: str = "0.0.0.0"
-    gt06_port: int = 5023
-    teltonika_port: int = 5027
-    
     udp_host: str = "0.0.0.0"
-    h02_port: int = 5024
     
     # API Server
     api_host: str = "0.0.0.0"
