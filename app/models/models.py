@@ -150,7 +150,7 @@ class DeviceState(Base):
     trip_odometer: Mapped[float] = mapped_column(Float, default=0.0)
     
     # Timestamps
-    last_update: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    last_update: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
     last_ignition_on: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_ignition_off: Mapped[Optional[datetime]] = mapped_column(DateTime)
     

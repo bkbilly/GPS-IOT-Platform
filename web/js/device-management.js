@@ -64,11 +64,21 @@ const ALERT_TYPES = {
 const DEFAULT_PROTOCOL = 'teltonika';
 const DEFAULT_TYPE = 'car';
 
-// ADDED: Auth Check
 function checkLogin() {
     if (!localStorage.getItem('auth_token')) {
         window.location.href = 'login.html';
     }
+}
+
+function formatDateToLocal(dateString) {
+    if (!dateString) return 'Never';
+    
+    // Ensure UTC parsing by adding 'Z' if not present
+    if (dateString.indexOf('Z') === -1 && dateString.indexOf('+') === -1) {
+        dateString += 'Z';
+    }
+    
+    return new Date(dateString).toLocaleString();
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -132,7 +142,7 @@ function renderDevices() {
         // Format dates
         const createdDate = new Date(d.created_at).toLocaleDateString();
         const lastComm = d.state?.last_update 
-            ? new Date(d.state.last_update).toLocaleString()
+            ? formatDateToLocal(d.state.last_update)
             : 'Never';
         
         return `

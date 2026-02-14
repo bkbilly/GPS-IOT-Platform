@@ -149,7 +149,7 @@ class DeviceStateResponse(BaseModel):
     is_moving: bool
     is_online: bool
     total_odometer: float
-    last_update: datetime
+    last_update: Optional[datetime]
 
 
 # ==================== User Schemas ====================
