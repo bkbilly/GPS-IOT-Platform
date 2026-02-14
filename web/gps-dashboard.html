@@ -49,23 +49,6 @@
                 <div id="pointDetailsContent"></div>
             </div>
             
-            <!-- History Controls in Sidebar (Hidden by default) -->
-            <div class="history-controls-sidebar" id="historyControlsSidebar">
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: var(--text-muted);">
-                    <span>Time</span>
-                    <span id="historyTimestamp" style="font-family: var(--font-mono); color: var(--text-primary);">--:--:--</span>
-                </div>
-                <div class="history-slider-container">
-                    <input type="range" class="history-slider" id="historySlider" min="0" max="100" value="0" style="width: 100%;" oninput="seekHistory(this.value)">
-                </div>
-                <div class="history-btn-group">
-                    <button class="btn btn-secondary" onclick="stepHistory(-1)" title="Previous">⏮</button>
-                    <button class="btn btn-primary" id="playbackBtn" onclick="togglePlayback()" title="Play/Pause">▶️</button>
-                    <button class="btn btn-secondary" onclick="stepHistory(1)" title="Next">⏭</button>
-                    <button class="btn btn-danger" onclick="exitHistoryMode()" title="Exit History">⏹</button>
-                </div>
-            </div>
-
             <!-- New Sidebar Footer for App Navigation -->
             <div class="sidebar-footer">
                 <div class="sidebar-row">
@@ -96,6 +79,22 @@
         
         <main class="main-content" style="position: relative;">
             <div id="map"></div>
+            <!-- Floating History Controls (Shown when history is active) -->
+            <div id="historyControls" class="history-controls" style="display: none;">
+                <div class="history-controls-top">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <span style="font-weight: 600; color: var(--accent-primary);">History Mode</span>
+                        <span id="historyTimestamp" class="history-time">--:--:--</span>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn-icon" onclick="stepHistory(-1)" title="Previous Event">⏮</button>
+                        <button class="btn-icon" onclick="togglePlayback()" id="playbackBtn" title="Play/Pause">▶️</button>
+                        <button class="btn-icon" onclick="stepHistory(1)" title="Next Event">⏭</button>
+                        <button class="btn-icon" onclick="exitHistoryMode()" title="Exit History" style="margin-left: 0.5rem; background: var(--bg-hover);">✕</button>
+                    </div>
+                </div>
+                <input type="range" class="history-slider" id="historySlider" min="0" max="100" value="0" oninput="seekHistory(this.value)">
+            </div>
         </main>
     </div>
 
@@ -184,29 +183,6 @@
                 if (map) map.invalidateSize();
             }, 300);
         });
-
-        // Override exitHistoryMode to handle new UI structure
-        const originalExitHistoryMode = window.exitHistoryMode;
-        window.exitHistoryMode = function() {
-            if (typeof stopPlayback === 'function') stopPlayback();
-            if (typeof map !== 'undefined') {
-                if (window.polylines && window.polylines['history']) window.map.removeLayer(window.polylines['history']);
-                if (window.markers && window.markers['history_pos']) window.map.removeLayer(window.markers['history_pos']);
-                
-                // Restore live marker
-                if (window.historyDeviceId && window.markers && window.markers[window.historyDeviceId]) {
-                    window.markers[window.historyDeviceId].addTo(window.map);
-                }
-            }
-
-            document.getElementById('historyControlsSidebar').style.display = 'none';
-            document.getElementById('sidebarDeviceList').style.display = 'block';
-            document.getElementById('sidebarHistoryDetails').style.display = 'none';
-        };
-        
-        // Correcting the ID for the sidebar footer to match dashboard.js expectations
-       const sidebarControls = document.getElementById('historyControlsSidebar');
-       if(sidebarControls) sidebarControls.id = 'historyControls';
     </script>
 </body>
 </html>

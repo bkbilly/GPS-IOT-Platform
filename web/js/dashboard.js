@@ -315,7 +315,6 @@ function getMarkerHtml(type, heading, ignitionOn) {
     return `
         <div class="marker-container" style="position: relative; display: flex; align-items: center; justify-content: center;">
             ${iconContent}
-            <div style="position: absolute; bottom: -2px; right: -2px; width: 10px; height: 10px; background: ${ignitionOn ? 'var(--accent-success)' : 'var(--text-muted)'}; border-radius: 50%; border: 2px solid var(--bg-primary);"></div>
         </div>
     `;
 }
@@ -474,7 +473,7 @@ async function loadHistory(deviceId, startTime, endTime) {
         
         // Correcting ID for new separate structure (footer is now separate from sidebar)
         // Actually, we need to show the history footer
-        const footer = document.getElementById('historyControlsSidebar');
+        const footer = document.getElementById('historyControls');
         if (footer) footer.style.display = 'flex';
         
         // Hide regular list
@@ -500,7 +499,7 @@ function exitHistoryMode() {
     }
 
     // Hide history footer
-    const footer = document.getElementById('historyControlsSidebar');
+    const footer = document.getElementById('historyControls');
     if (footer) footer.style.display = 'none';
 
     document.getElementById('sidebarDeviceList').style.display = 'block';

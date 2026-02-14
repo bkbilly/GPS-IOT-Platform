@@ -61,7 +61,6 @@ async def lifespan(app: FastAPI):
     protocols = ProtocolRegistry.get_all()
     for name, decoder in protocols.items():
         port = decoder.PORT
-        # H02 is UDP
         protocol_type = getattr(decoder, 'PROTOCOL_TYPE', 'tcp').lower()
 
         if protocol_type == 'udp':
