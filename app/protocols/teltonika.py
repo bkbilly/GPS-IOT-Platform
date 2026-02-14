@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 @ProtocolRegistry.register("teltonika")
 class TeltonikaDecoder(BaseProtocolDecoder):
     PORT = 5027
+    PROTOCOL_TYPE = 'tcp'
     
     IO_MAP = {
         1: 'din1', 2: 'din2', 3: 'din3', 4: 'din4', 9: 'adc1', 10: 'adc2', 11: 'iccid',
@@ -31,41 +32,77 @@ class TeltonikaDecoder(BaseProtocolDecoder):
 
     async def decode(self, data: bytes, client_info: Dict[str, Any], known_imei: Optional[str] = None) -> Tuple[Union[NormalizedPosition, Dict[str, Any], None], int]:
         try:
+            # TCP Data packet
             if len(data) >= 4 and data[0:4] == b'\x00\x00\x00\x00':
-                if len(data) < 8: return None, 0
+                if len(data) < 8: 
+                    return None, 0
                 data_length = struct.unpack('>I', data[4:8])[0]
                 total_len = 8 + data_length + 4
-                if len(data) < total_len: return None, 0
+                if len(data) < total_len: 
+                    return None, 0
                 packet_data = data[8:8+data_length]
                 consumed = total_len
-                if len(packet_data) < 2: return None, consumed
+                if len(packet_data) < 2: 
+                    return None, consumed
+                
                 codec_id = packet_data[0]
+                
+                # Codec 8 (0x08)
                 if codec_id == 0x08:
-                    decoded = await self._decode_codec8(packet_data[2:], known_imei)
+                    decoded = await self._decode_codec8(packet_data[2:], known_imei, extended=False)
                     return decoded, consumed
-                return None, consumed
+                
+                # Codec 8 Extended (0x8E)
+                elif codec_id == 0x8E:
+                    decoded = await self._decode_codec8(packet_data[2:], known_imei, extended=True)
+                    return decoded, consumed
+                
+                else:
+                    logger.warning(f"Unsupported Teltonika codec: 0x{codec_id:02X}")
+                    return None, consumed
+            
+            # IMEI login packet
             elif len(data) >= 2:
                 imei_len = struct.unpack('>H', data[0:2])[0]
-                if imei_len == 0: return None, 1 if len(data) >= 4 else 0
+                if imei_len == 0: 
+                    return None, 1 if len(data) >= 4 else 0
                 if len(data) >= imei_len + 2:
                     try:
                         imei = data[2:2+imei_len].decode('ascii')
                         logger.info(f"Teltonika Login: {imei}")
                         return {"event": "login", "imei": imei, "response": b'\x01'}, imei_len + 2
-                    except UnicodeDecodeError: return None, 1
+                    except UnicodeDecodeError: 
+                        return None, 1
                 return None, 0
+            
             return None, 0
         except Exception as e:
             logger.error(f"Teltonika Decode error: {e}")
             return None, 1
 
-    async def _decode_codec8(self, data: bytes, known_imei: Optional[str]) -> Optional[NormalizedPosition]:
-        if not known_imei: return None
+    async def _decode_codec8(self, data: bytes, known_imei: Optional[str], extended: bool = False) -> Optional[NormalizedPosition]:
+        """
+        Decode Codec 8 or Codec 8 Extended
+        Args:
+            data: Raw packet data after codec ID and record count
+            known_imei: Device IMEI
+            extended: True for Codec 8 Extended (2-byte IO IDs), False for Codec 8 (1-byte IO IDs)
+        """
+        if not known_imei: 
+            return None
         try:
             offset = 0
+            
+            # Timestamp (8 bytes)
             timestamp_ms = struct.unpack('>Q', data[offset:offset+8])[0]
             device_time = datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc)
-            offset += 9
+            offset += 8
+            
+            # Priority (1 byte)
+            priority = data[offset]
+            offset += 1
+            
+            # GPS Element (15 bytes)
             lon = struct.unpack('>i', data[offset:offset+4])[0] / 10000000.0
             lat = struct.unpack('>i', data[offset+4:offset+8])[0] / 10000000.0
             alt = struct.unpack('>h', data[offset+8:offset+10])[0]
@@ -73,29 +110,75 @@ class TeltonikaDecoder(BaseProtocolDecoder):
             sat = data[offset+12]
             speed = struct.unpack('>H', data[offset+13:offset+15])[0]
             offset += 15
-            offset += 2 # IO Event + Total
-            ignition = None; sensors = {}
             
-            def parse_io(bw, func):
+            # IO Element
+            offset += 2  # Skip IO Event ID + Total IO count
+            
+            ignition = None
+            sensors = {}
+            
+            # IO parsing function
+            def parse_io(byte_width: int, unpack_func):
                 nonlocal offset, ignition
-                if offset + 1 > len(data): return
-                cnt = data[offset]; offset += 1
-                for _ in range(cnt):
-                    if offset + 1 + bw > len(data): break
-                    io_id = data[offset]
-                    val = func(data[offset+1 : offset+1+bw])
-                    if io_id == 239: ignition = bool(val)
-                    if io_id in self.IO_MULTIPLIERS: val = round(float(val) * self.IO_MULTIPLIERS[io_id], 3)
+                if offset + 1 > len(data): 
+                    return
+                
+                count = data[offset]
+                offset += 1
+                
+                for _ in range(count):
+                    # Codec 8 Extended uses 2-byte IO IDs
+                    id_width = 2 if extended else 1
+                    
+                    if offset + id_width + byte_width > len(data): 
+                        break
+                    
+                    # Read IO ID (1 or 2 bytes depending on codec)
+                    if extended:
+                        io_id = struct.unpack('>H', data[offset:offset+2])[0]
+                        offset += 2
+                    else:
+                        io_id = data[offset]
+                        offset += 1
+                    
+                    # Read IO value
+                    val = unpack_func(data[offset:offset+byte_width])
+                    offset += byte_width
+                    
+                    # Special handling for ignition
+                    if io_id == 239: 
+                        ignition = bool(val)
+                    
+                    # Apply multiplier if defined
+                    if io_id in self.IO_MULTIPLIERS: 
+                        val = round(float(val) * self.IO_MULTIPLIERS[io_id], 3)
+                    
+                    # Map to readable name or use generic name
                     key = self.IO_MAP.get(io_id, f"io_{io_id}")
                     sensors[key] = val
-                    offset += 1 + bw
             
+            # Parse 1-byte, 2-byte, 4-byte, and 8-byte IO elements
             parse_io(1, lambda b: b[0])
             parse_io(2, lambda b: struct.unpack('>H', b)[0])
             parse_io(4, lambda b: struct.unpack('>I', b)[0])
             parse_io(8, lambda b: struct.unpack('>Q', b)[0])
 
-            return NormalizedPosition(imei=known_imei, device_time=device_time, latitude=lat, longitude=lon, altitude=float(alt), speed=float(speed), course=float(angle), satellites=sat, ignition=ignition, sensors=sensors, raw_data={"priority": data[8]})
-        except Exception as e: return None
+            return NormalizedPosition(
+                imei=known_imei, 
+                device_time=device_time, 
+                latitude=lat, 
+                longitude=lon, 
+                altitude=float(alt), 
+                speed=float(speed), 
+                course=float(angle), 
+                satellites=sat, 
+                ignition=ignition, 
+                sensors=sensors, 
+                raw_data={"priority": priority, "codec": "8E" if extended else "8"}
+            )
+        except Exception as e: 
+            logger.error(f"Codec 8{'E' if extended else ''} decode error: {e}")
+            return None
 
-    async def encode_command(self, command_type: str, params: Dict[str, Any]) -> bytes: return b''
+    async def encode_command(self, command_type: str, params: Dict[str, Any]) -> bytes: 
+        return b''

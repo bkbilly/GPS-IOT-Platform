@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 import logging
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -40,12 +41,59 @@ from models import User, Device, user_device_association
 logger = logging.getLogger(__name__)
 
 
+# ==================== Startup/Shutdown Events ====================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown"""
+    # Startup
+    logger.info("Starting GPS/IoT Platform...")
+    settings = get_settings()
+    
+    await init_database(settings.database_url)
+    
+    redis_pubsub.redis_url = settings.redis_url
+    await redis_pubsub.connect()
+
+    alert_engine = get_alert_engine()
+    alert_engine.set_alert_callback(handle_new_alert)
+    
+    # Dynamic Protocol Server Startup
+    protocols = ProtocolRegistry.get_all()
+    for name, decoder in protocols.items():
+        port = decoder.PORT
+        # H02 is UDP
+        protocol_type = getattr(decoder, 'PROTOCOL_TYPE', 'tcp').lower()
+
+        if protocol_type == 'udp':
+            server = UDPServer(settings.udp_host, port, name, process_position_callback)
+            asyncio.create_task(server.start())
+            logger.info(f"Started UDP Server for {name} on port {port}")
+        else:
+            server = TCPServer(settings.tcp_host, port, name, process_position_callback, command_callback)
+            asyncio.create_task(server.start())
+            logger.info(f"Started TCP Server for {name} on port {port}")
+
+    asyncio.create_task(offline_detection_task())
+    logger.info("GPS/IoT Platform started successfully")
+    
+    # Yield control to the application
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down GPS/IoT Platform...")
+    db = get_db()
+    await db.close()
+    await redis_pubsub.close()
+    logger.info("GPS/IoT Platform shutdown complete")
+
+
 # ==================== FastAPI App ====================
 
 app = FastAPI(
     title="GPS/IoT Platform API",
     description="High-performance GPS tracking and IoT platform",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS
@@ -222,49 +270,6 @@ async def handle_new_alert(alert: AlertHistory):
         await ws_manager.broadcast_alert(alert)
     except Exception as e:
         logger.error(f"Failed to broadcast alert: {e}")
-
-
-# ==================== Startup/Shutdown Events ====================
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup"""
-    logger.info("Starting GPS/IoT Platform...")
-    settings = get_settings()
-    
-    await init_database(settings.database_url)
-    
-    redis_pubsub.redis_url = settings.redis_url
-    await redis_pubsub.connect()
-
-    alert_engine = get_alert_engine()
-    alert_engine.set_alert_callback(handle_new_alert)
-    
-    # Dynamic Protocol Server Startup
-    protocols = ProtocolRegistry.get_all()
-    for name, decoder in protocols.items():
-        port = decoder.PORT
-        # H02 is UDP
-        if name == 'h02':
-            server = UDPServer(settings.udp_host, port, name, process_position_callback)
-            asyncio.create_task(server.start())
-            logger.info(f"Started UDP Server for {name} on port {port}")
-        else:
-            server = TCPServer(settings.tcp_host, port, name, process_position_callback, command_callback)
-            asyncio.create_task(server.start())
-            logger.info(f"Started TCP Server for {name} on port {port}")
-    
-    asyncio.create_task(offline_detection_task())
-    logger.info("GPS/IoT Platform started successfully")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("Shutting down GPS/IoT Platform...")
-    db = get_db()
-    await db.close()
-    await redis_pubsub.close()
-    logger.info("GPS/IoT Platform shutdown complete")
 
 
 # ==================== REST API Endpoints ====================
