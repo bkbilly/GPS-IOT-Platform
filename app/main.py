@@ -32,6 +32,10 @@ from core.config import get_settings
 
 import uvicorn
 
+from sqlalchemy import select, insert, update, delete, and_
+from models import User, Device, user_device_association
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -288,8 +292,6 @@ async def login(form_data: UserLogin):
 async def get_all_users():
     """Get all users (Admin)"""
     db = get_db()
-    from sqlalchemy import select
-    from models import User
     async with db.get_session() as session:
         result = await session.execute(select(User))
         return result.scalars().all()
@@ -318,8 +320,6 @@ async def update_user(user_id: int, user_data: UserUpdate):
 async def delete_user(user_id: int):
     """Delete a user (Admin only)"""
     db = get_db()
-    from sqlalchemy import delete
-    from models import User
     async with db.get_session() as session:
         await session.execute(delete(User).where(User.id == user_id))
     return {"status": "deleted"}
@@ -328,8 +328,6 @@ async def delete_user(user_id: int):
 async def assign_device(user_id: int, device_id: int = Query(...), action: str = Query('add')):
     """Assign or remove a device from a user"""
     db = get_db()
-    from models import user_device_association
-    from sqlalchemy import insert, delete, and_
     
     async with db.get_session() as session:
         if action == 'add':
@@ -364,8 +362,6 @@ async def assign_device(user_id: int, device_id: int = Query(...), action: str =
 async def get_all_devices():
     """Get ALL devices in the system (Admin)"""
     db = get_db()
-    from sqlalchemy import select
-    from models import Device
     async with db.get_session() as session:
         result = await session.execute(select(Device))
         return result.scalars().all()
@@ -482,7 +478,7 @@ async def create_device(device_data: DeviceCreate, user_id: int = Query(1)):
     return device
 
 @app.put("/api/devices/{device_id}")
-async def update_device(device_id: int, device_data: DeviceCreate):
+async def update_device(device_id: int, device_data: DeviceCreate, new_odometer: Optional[float] = Query(None)):
     """Update device - properly handles config with None values for disabled alerts"""
     logger.info(f"Updating device {device_id}")
     logger.info(f"Received config: {device_data.config.model_dump()}")
@@ -491,6 +487,16 @@ async def update_device(device_id: int, device_data: DeviceCreate):
     device = await db.update_device(device_id, device_data)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    
+    # Update odometer if provided
+    if new_odometer is not None:
+        async with db.get_session() as session:
+            await session.execute(
+                update(DeviceState)
+                .where(DeviceState.device_id == device_id)
+                .values(total_odometer=new_odometer)
+            )
+        logger.info(f"Updated odometer to {new_odometer} km")
     
     logger.info(f"Saved config: {device.config}")
     return device

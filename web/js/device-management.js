@@ -93,8 +93,23 @@ async function loadDevices() {
         const res = await fetch(`${API_BASE}/devices?user_id=${userId}&_t=${Date.now()}`);
         if (!res.ok) throw new Error('Failed to load devices');
         devices = await res.json();
+        
+        // Load state for each device
+        for (const device of devices) {
+            try {
+                const stateRes = await fetch(`${API_BASE}/devices/${device.id}/state`);
+                if (stateRes.ok) {
+                    device.state = await stateRes.json();
+                }
+            } catch (e) {
+                console.error(`Failed to load state for device ${device.id}`, e);
+            }
+        }
+        
         renderDevices();
-    } catch (e) { showAlert('Error loading devices', 'error'); }
+    } catch (e) { 
+        showAlert('Error loading devices', 'error'); 
+    }
 }
 
 function renderDevices() {
@@ -113,6 +128,13 @@ function renderDevices() {
     
     grid.innerHTML = devices.map(d => {
         const vehicleIcon = VEHICLE_ICONS[d.vehicle_type] || '📡';
+        
+        // Format dates
+        const createdDate = new Date(d.created_at).toLocaleDateString();
+        const lastComm = d.state?.last_update 
+            ? new Date(d.state.last_update).toLocaleString()
+            : 'Never';
+        
         return `
         <div class="device-card">
             <div class="device-card-header">
@@ -127,24 +149,12 @@ function renderDevices() {
             
             <div class="device-details">
                 <div class="detail-row">
-                    <span class="detail-label">Protocol</span>
-                    <span class="detail-value">${d.protocol}</span>
-                </div>
-                ${d.vehicle_type ? `
-                <div class="detail-row">
-                    <span class="detail-label">Vehicle Type</span>
-                    <span class="detail-value">${d.vehicle_type}</span>
-                </div>
-                ` : ''}
-                ${d.license_plate ? `
-                <div class="detail-row">
-                    <span class="detail-label">License Plate</span>
-                    <span class="detail-value">${d.license_plate}</span>
-                </div>
-                ` : ''}
-                <div class="detail-row">
                     <span class="detail-label">Created</span>
-                    <span class="detail-value">${new Date(d.created_at).toLocaleDateString()}</span>
+                    <span class="detail-value">${createdDate}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Last Communication</span>
+                    <span class="detail-value">${lastComm}</span>
                 </div>
             </div>
             
@@ -169,6 +179,9 @@ function openAddDeviceModal() {
     document.getElementById('submitText').textContent = 'Add Device';
     document.getElementById('deviceForm').reset();
     
+    // Clear odometer
+    document.getElementById('currentOdometer').value = '0.0';
+
     // Default Alerts
     renderAlertConfiguration({
         custom_rules: []
@@ -189,11 +202,17 @@ function editDevice(deviceId) {
     // Populate form
     document.getElementById('deviceName').value = d.name;
     document.getElementById('deviceImei').value = d.imei;
-    // Protocol and Vehicle Type are hidden but handled in submit
     document.getElementById('vehicleType').value = d.vehicle_type || '';
     document.getElementById('licensePlate').value = d.license_plate || '';
     document.getElementById('vin').value = d.vin || '';
     
+    // Load current odometer from state
+    if (d.state && d.state.total_odometer !== undefined) {
+        document.getElementById('currentOdometer').value = d.state.total_odometer.toFixed(1);
+    } else {
+        document.getElementById('currentOdometer').value = '0.0';
+    }
+
     // Config fields
     const config = d.config || {};
     document.getElementById('oilChangeKm').value = config.maintenance?.oil_change_km || 10000;
@@ -540,7 +559,16 @@ async function handleSubmit(event) {
     try {
         let response;
         if (editingDeviceId) {
-            response = await fetch(`${API_BASE}/devices/${editingDeviceId}`, {
+            // Get odometer value
+            const newOdometer = parseFloat(document.getElementById('currentOdometer').value) || null;
+            
+            // Build URL with query parameter
+            let url = `${API_BASE}/devices/${editingDeviceId}`;
+            if (newOdometer !== null) {
+                url += `?new_odometer=${newOdometer}`;
+            }
+            
+            response = await fetch(url, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(deviceData)
