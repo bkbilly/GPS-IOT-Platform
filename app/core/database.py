@@ -433,6 +433,12 @@ class DatabaseService:
             await session.flush()
             return alert
 
+    async def delete_alert(self, alert_id: int) -> bool:
+        """Delete an alert from history"""
+        async with self.get_session() as session:
+            result = await session.execute(delete(AlertHistory).where(AlertHistory.id == alert_id))
+            return result.rowcount > 0
+
     async def get_user_alerts(self, user_id: int, unread_only: bool = False, device_id: Optional[int] = None, limit: int = 50) -> List[AlertHistory]:
         async with self.get_session() as session:
             query = select(AlertHistory).where(AlertHistory.user_id == user_id)
@@ -448,6 +454,14 @@ class DatabaseService:
     async def mark_alert_read(self, alert_id: int) -> bool:
         async with self.get_session() as session:
             result = await session.execute(update(AlertHistory).where(AlertHistory.id == alert_id).values(is_read=True, read_at=datetime.utcnow()))
+            return result.rowcount > 0
+
+    async def delete_alert(self, alert_id: int) -> bool:
+        """Delete an alert from history permanently"""
+        async with self.get_session() as session:
+            result = await session.execute(
+                delete(AlertHistory).where(AlertHistory.id == alert_id)
+            )
             return result.rowcount > 0
 
     async def enqueue_command(self, command_data: CommandCreate) -> CommandQueue:
@@ -545,3 +559,5 @@ def get_db() -> DatabaseService:
     if db_service is None:
         raise RuntimeError("Database not initialized.")
     return db_service
+
+

@@ -1,30 +1,13 @@
-# ... existing imports ...
+"""
+Pydantic Schemas - GPS/IoT Platform
+Request/Response models with validation
+"""
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Union
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from enum import Enum
 
 
-# ... existing enums ...
-
-# ... existing NormalizedPosition ...
-
-# ... existing Device Schemas ...
-
-# ... existing User Schemas ...
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-    user_id: int
-    username: str
-
-# ... existing Position/Trip/Geofence/Alert/Command/WS/Stats schemas ...
-# (Include all existing schemas here to ensure the file is complete and valid)
 # ==================== Enums ====================
 
 class AlertType(str, Enum):
@@ -96,11 +79,16 @@ class CustomRule(BaseModel):
 
 
 class DeviceConfig(BaseModel):
-    """Device configuration schema"""
-    offline_timeout_hours: Optional[int] = Field(24, ge=1, le=720)
-    speed_tolerance: Optional[float] = Field(5.0, ge=0)
-    idle_timeout_minutes: Optional[int] = Field(10, ge=1)
-    towing_threshold_meters: Optional[int] = Field(100, ge=10)
+    """
+    Device configuration schema
+    ALL ALERT FIELDS ARE OPTIONAL AND DEFAULT TO None (DISABLED)
+    """
+    # Alert thresholds - None means alert is DISABLED
+    offline_timeout_hours: Optional[int] = Field(None, ge=1, le=720)
+    speed_tolerance: Optional[float] = Field(None, ge=0)
+    speed_duration_seconds: Optional[int] = Field(30, ge=1)
+    idle_timeout_minutes: Optional[int] = Field(None, ge=1)
+    towing_threshold_meters: Optional[int] = Field(None, ge=10)
     
     # Mapping of standard alert keys to list of channel names
     alert_channels: Dict[str, List[str]] = Field(default_factory=dict)
@@ -108,12 +96,7 @@ class DeviceConfig(BaseModel):
     custom_rules: List[Union[CustomRule, str]] = Field(default_factory=list)
     
     sensors: Dict[str, str] = Field(default_factory=dict)
-    maintenance: Dict[str, int] = Field(
-        default_factory=lambda: {
-            "oil_change_km": 10000,
-            "tire_rotation_km": 8000,
-        }
-    )
+    maintenance: Dict[str, int] = Field(default_factory=dict)
 
 
 class DeviceCreate(BaseModel):
@@ -123,7 +106,20 @@ class DeviceCreate(BaseModel):
     vehicle_type: Optional[str] = "car"
     license_plate: Optional[str] = None
     vin: Optional[str] = None
-    config: DeviceConfig = Field(default_factory=DeviceConfig)
+    # DEFAULT CONFIG: ALL ALERTS DISABLED (None)
+    config: DeviceConfig = Field(
+        default_factory=lambda: DeviceConfig(
+            offline_timeout_hours=None,
+            speed_tolerance=None,
+            speed_duration_seconds=30,
+            idle_timeout_minutes=None,
+            towing_threshold_meters=None,
+            alert_channels={},
+            custom_rules=[],
+            sensors={},
+            maintenance={}
+        )
+    )
 
 
 class DeviceResponse(BaseModel):
@@ -171,6 +167,16 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=8)
     notification_channels: Optional[List[Dict[str, str]]] = None
     language: Optional[str] = None
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    user_id: int
+    username: str
 
 class UserResponse(BaseModel):
     """Schema for returning user details"""

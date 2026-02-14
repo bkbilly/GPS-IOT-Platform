@@ -463,6 +463,15 @@ async def mark_alert_read(alert_id: int):
         raise HTTPException(status_code=404, detail="Alert not found")
     return {"status": "success"}
 
+@app.delete("/api/alerts/{alert_id}")
+async def delete_alert(alert_id: int):
+    """Delete an alert from history"""
+    db = get_db()
+    success = await db.delete_alert(alert_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {"status": "deleted"}
+
 @app.post("/api/devices")
 async def create_device(device_data: DeviceCreate, user_id: int = Query(1)):
     db = get_db()
@@ -474,9 +483,16 @@ async def create_device(device_data: DeviceCreate, user_id: int = Query(1)):
 
 @app.put("/api/devices/{device_id}")
 async def update_device(device_id: int, device_data: DeviceCreate):
+    """Update device - properly handles config with None values for disabled alerts"""
+    logger.info(f"Updating device {device_id}")
+    logger.info(f"Received config: {device_data.config.model_dump()}")
+    
     db = get_db()
     device = await db.update_device(device_id, device_data)
-    if not device: raise HTTPException(status_code=404, detail="Device not found")
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    logger.info(f"Saved config: {device.config}")
     return device
 
 @app.delete("/api/devices/{device_id}")
