@@ -171,10 +171,6 @@ function openAddDeviceModal() {
     
     // Default Alerts
     renderAlertConfiguration({
-        speed_tolerance: 100,
-        idle_timeout_minutes: 10,
-        offline_timeout_hours: 24,
-        towing_threshold_meters: 100,
         custom_rules: []
     });
     
@@ -521,13 +517,17 @@ async function handleSubmit(event) {
     const deviceData = {
         name: document.getElementById('deviceName').value,
         imei: document.getElementById('deviceImei').value,
-        protocol: protocol, // preserved from existing or default
+        protocol: protocol,
         vehicle_type: document.getElementById('vehicleType').value || vehicleType,
         license_plate: document.getElementById('licensePlate').value || null,
         vin: document.getElementById('vin').value || null,
         config: {
-            ...currentConfig,
+            // Only include alerts that are currently in the UI
             ...configAlerts,
+            // Preserve non-alert config from existing device
+            speed_duration_seconds: currentConfig.speed_duration_seconds || 30,
+            sensors: currentConfig.sensors || {},
+            // Set alert channels and rules
             alert_channels: alertChannels,
             custom_rules: customRules,
             maintenance: {
