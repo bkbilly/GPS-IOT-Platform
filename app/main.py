@@ -124,6 +124,16 @@ class WebSocketManager:
     
     async def broadcast_position_update(self, position: NormalizedPosition, device: Device):
         """Broadcast position update to all users with access to device"""
+        # Get the device state to include odometer
+        state_data = {}
+        if device.state:
+            state_data = {
+                "total_odometer": device.state.total_odometer,
+                "trip_odometer": device.state.trip_odometer,
+                "is_moving": device.state.is_moving,
+                "is_online": device.state.is_online
+            }
+        
         message = {
             "type": WSMessageType.POSITION_UPDATE.value,
             "device_id": device.id,
@@ -136,7 +146,8 @@ class WebSocketManager:
                 "last_speed": position.speed,
                 "last_course": position.course,
                 "ignition_on": position.ignition if position.ignition is not None else False,
-                "last_update": position.device_time.isoformat()
+                "last_update": position.device_time.isoformat(),
+                **state_data  # Include odometer and other state data
             }
         }
         await redis_pubsub.publish(f"device:{device.id}", message)
