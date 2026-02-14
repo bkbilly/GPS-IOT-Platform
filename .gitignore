@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+.venv/
+
+# Environment Variables (CRITICAL)
+.env
+.env.local
+
+# IDEs
+.vscode/
+.idea/
+
+# Database
+*.sqlite3
+*.db
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

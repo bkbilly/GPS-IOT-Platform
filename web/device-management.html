@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Management - GPS Fleet Tracker</title>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #131825;
+            --bg-tertiary: #1a2035;
+            --bg-card: #1f2937;
+            --bg-hover: #2a3447;
+            
+            --text-primary: #e5e7eb;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            
+            --accent-primary: #3b82f6;
+            --accent-secondary: #8b5cf6;
+            --accent-success: #10b981;
+            --accent-warning: #f59e0b;
+            --accent-danger: #ef4444;
+            
+            --border-color: #374151;
+            --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+            
+            --font-display: 'Outfit', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            /* Firefox Scrollbar Support */
+            scrollbar-width: thin;
+            scrollbar-color: var(--bg-tertiary) var(--bg-primary);
+        }
+        
+        body {
+            font-family: var(--font-display);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .back-btn {
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all var(--transition-base);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            font-size: 1.25rem;
+        }
+        
+        .back-btn:hover {
+            background: var(--accent-primary);
+            border-color: var(--accent-primary);
+            transform: translateX(-4px);
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 10px;
+            font-family: var(--font-display);
+            font-size: 0.9375rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition-base);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3);
+        }
+        
+        .btn-danger {
+            background: var(--accent-danger);
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #dc2626;
+            transform: translateY(-2px);
+        }
+        
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+        
+        .btn-secondary:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent-primary);
+            transform: translateY(-2px);
+        }
+        
+        .devices-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .device-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.75rem;
+            position: relative;
+            overflow: hidden;
+            transition: all var(--transition-base);
+        }
+        
+        .device-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            transform: scaleX(0);
+            transition: transform var(--transition-base);
+        }
+        
+        .device-card:hover {
+            border-color: var(--accent-primary);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+        }
+        
+        .device-card:hover::before {
+            transform: scaleX(1);
+        }
+        
+        .device-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 1.5rem;
+        }
+        
+        .device-name {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+        
+        .device-imei {
+            font-family: var(--font-mono);
+            font-size: 0.8125rem;
+            color: var(--text-muted);
+        }
+        
+        .device-status {
+            padding: 0.375rem 0.875rem;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .device-status.active {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-success);
+        }
+        
+        .device-status.inactive {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-danger);
+        }
+        
+        .device-details {
+            display: grid;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+        }
+        
+        .detail-label {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+        
+        .detail-value {
+            font-family: var(--font-mono);
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .device-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(10, 14, 26, 0.9);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn var(--transition-base);
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 2.5rem;
+            max-width: 1100px;
+            width: 95%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+            animation: slideUp var(--transition-base);
+        }
+        
+        .modal-content.wide {
+            max-width: 1200px;
+        }
+        
+        @keyframes slideUp {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .modal-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+        
+        .modal-close {
+            width: 40px;
+            height: 40px;
+            border: none;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            transition: all var(--transition-base);
+        }
+        
+        .modal-close:hover {
+            background: var(--accent-danger);
+            color: white;
+            transform: rotate(90deg);
+        }
+        
+        .form-main-layout { display: grid; grid-template-columns: 1fr 1.2fr; gap: 2rem; align-items: start; }
+        @media (max-width: 1023px) { .form-main-layout { grid-template-columns: 1fr; } }
+        
+        .form-group { margin-bottom: 1.5rem; }
+        .form-label { display: block; font-size: 0.9375rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-secondary); }
+        .form-input, .form-select { width: 100%; padding: 0.875rem 1.125rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-primary); font-family: var(--font-display); font-size: 0.9375rem; transition: all var(--transition-base); }
+        
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .form-textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+        
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .config-section { margin-bottom: 2rem; padding: 1.5rem; background: var(--bg-tertiary); border-radius: 12px; border: 1px solid var(--border-color); }
+        .config-title { font-size: 1.125rem; font-weight: 700; margin-bottom: 1.25rem; color: var(--accent-primary); }
+        
+        .alert-config-item { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+        .alert-config-item-top { display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem; }
+        .alert-config-label { font-weight: 600; margin-bottom: 0.25rem; }
+        .alert-config-desc { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; line-height: 1.4; }
+        .alert-config-input { width: 100px; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); }
+        
+        /* Channel Selection Styling */
+        .channel-selector { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color); }
+        .channel-pill { padding: 0.3rem 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 20px; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; user-select: none; }
+        .channel-pill:hover { border-color: var(--accent-primary); }
+        .channel-pill.active { background: var(--accent-primary); border-color: var(--accent-primary); color: white; }
+        
+        .raw-data-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        .raw-data-table th, .raw-data-table td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+        .raw-data-table th { background: var(--bg-tertiary); position: sticky; top: 0; }
+        
+        .alert { padding: 1rem 1.25rem; border-radius: 10px; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; font-size: 0.9375rem; }
+        .alert-success { background: rgba(16, 185, 129, 0.15); color: var(--accent-success); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .alert-error { background: rgba(239, 68, 68, 0.15); color: var(--accent-danger); border: 1px solid rgba(239, 68, 68, 0.3); }
+        
+        .loading { display: inline-block; width: 20px; height: 20px; border: 3px solid var(--border-color); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .pagination { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem; align-items: center; }
+        .page-info { margin: 0 1rem; color: var(--text-muted); font-size: 0.9rem; }
+        
+        /* Webkit Scrollbar */
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--bg-hover); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-title">
+                <a href="gps-dashboard.html" class="back-btn">←</a>
+                <div><h1>Device Management</h1><p style="color: var(--text-muted); margin-top: 0.5rem;">Manage trackers and notification preferences</p></div>
+            </div>
+            <div style="display: flex; gap: 1rem;">
+                <a href="user-settings.html" class="btn btn-secondary">⚙️ User Settings</a>
+                <button class="btn btn-primary" onclick="openAddDeviceModal()">➕ Add New Device</button>
+            </div>
+        </div>
+        <div id="alertContainer"></div>
+        <div class="devices-grid" id="devicesGrid"></div>
+    </div>
+    
+    <!-- Add/Edit Device Modal -->
+    <div class="modal" id="deviceModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modalTitle">Device</h2>
+                <button class="modal-close" onclick="closeDeviceModal()">✕</button>
+            </div>
+            <form id="deviceForm" onsubmit="handleSubmit(event)">
+                <div class="form-main-layout">
+                    <div class="form-column">
+                        <div class="form-group">
+                            <label class="form-label">Device Name *</label>
+                            <input type="text" class="form-input" id="deviceName" required placeholder="e.g. Delivery Van 1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">IMEI *</label>
+                            <input type="text" class="form-input" id="deviceImei" required placeholder="15-20 digits">
+                        </div>
+                        
+                        <!-- REMOVED: Protocol and Vehicle Type Selects from UI -->
+                        
+                        <div class="config-section">
+                            <h3 class="config-title">Vehicle Details</h3>
+                            <div class="form-group">
+                                <label class="form-label">License Plate</label>
+                                <input type="text" class="form-input" id="licensePlate">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">VIN</label>
+                                <input type="text" class="form-input" id="vin">
+                            </div>
+                        </div>
+                        
+                        <div class="config-section">
+                            <h3 class="config-title">Maintenance</h3>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                                <div class="form-group"><label class="form-label">Oil (km)</label><input type="number" class="form-input" id="oilChangeKm"></div>
+                                <div class="form-group"><label class="form-label">Tire (km)</label><input type="number" class="form-input" id="tireRotationKm"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-column">
+                        <div class="config-section">
+                            <h3 class="config-title">Alert & Channel Rules</h3>
+                            <div id="activeAlertsList" class="alert-config-list"></div>
+                            <div class="alert-add-container">
+                                <select class="form-input" id="addAlertSelect" style="flex:1;"></select>
+                                <button type="button" class="btn btn-secondary" onclick="addSelectedAlert()">Add</button>
+                            </div>
+                            <div style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border-color);">
+                                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1rem;">
+                                    <h4 style="font-size: 1rem; margin: 0;">Custom Rules</h4>
+                                    <a href="https://github.com/caronc/apprise" target="_blank" style="font-size: 0.8rem; color: var(--accent-primary); text-decoration: none;">Apprise Documentation ↗</a>
+                                </div>
+                                <div id="customRulesList" class="alert-config-list"></div>
+                                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem;">
+                                    <input type="text" id="newRuleName" class="form-input" placeholder="Rule Name">
+                                    <div style="display: flex; gap: 0.5rem;">
+                                        <input type="text" id="newRuleCond" class="form-input" placeholder="Condition e.g. speed > 120">
+                                        <button type="button" class="btn btn-secondary" onclick="addCustomRule()">Add</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeDeviceModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="submitBtn">
+                        <span id="submitText">Save Changes</span>
+                        <span id="submitLoading" class="loading" style="display:none;"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Raw Data Modal -->
+    <div class="modal" id="rawDataModal">
+        <div class="modal-content wide">
+            <div class="modal-header">
+                <h2 class="modal-title">Raw History</h2>
+                <button class="modal-close" onclick="closeRawDataModal()">✕</button>
+            </div>
+            <div style="overflow-x:auto;">
+                <table class="raw-data-table">
+                    <thead><tr><th>Time</th><th>Lat</th><th>Lon</th><th>Speed</th><th>Heading</th><th>Sat</th><th>Ign</th><th>Attributes</th></tr></thead>
+                    <tbody id="rawDataBody"></tbody>
+                </table>
+            </div>
+            <div class="pagination">
+                <button class="btn btn-secondary" id="prevPageBtn" onclick="changeRawDataPage(-1)">Previous</button>
+                <span class="page-info" id="pageInfo"></span>
+                <button class="btn btn-secondary" id="nextPageBtn" onclick="changeRawDataPage(1)">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api';
+        let devices = []; let userChannels = []; let editingDeviceId = null; let activeAlerts = new Set(); let customRules = [];
+        let rawData = []; let currentPage = 1; const itemsPerPage = 50;
+        
+        const VEHICLE_ICONS = { car: '🚗', truck: '🚛', van: '🚐', motorcycle: '🏍️', airplane: '✈️', person: '🚶', arrow: '▲', bicycle: '🚲', boat: '🚢', scooter: '🛴', tractor: '🚜', other: '📦' };
+        const ALERT_TYPES = {
+            speed_tolerance: { label: 'Speed Limit', desc: 'Alert when speed exceeds km/h.', unit: 'km/h', min: 0, max: 300, default: 100 },
+            idle_timeout_minutes: { label: 'Idle Timeout', desc: 'Alert when stationary with ignition ON.', unit: 'min', min: 1, max: 120, default: 10 },
+            offline_timeout_hours: { label: 'Offline Alert', desc: 'Alert when data stops for hours.', unit: 'h', min: 1, max: 168, default: 24 },
+            towing_threshold_meters: { label: 'Towing Alert', desc: 'Alert when moved while parked.', unit: 'm', min: 10, max: 1000, default: 100 }
+        };
+
+        const DEFAULT_PROTOCOL = 'teltonika';
+        const DEFAULT_TYPE = 'car';
+
+        // ADDED: Auth Check
+        function checkLogin() {
+            if (!localStorage.getItem('auth_token')) {
+                window.location.href = 'login.html';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            checkLogin();
+            await loadUserChannels();
+            await loadDevices();
+        });
+
+        async function loadUserChannels() {
+            try {
+                const userId = localStorage.getItem('user_id') || 1;
+                const res = await fetch(`${API_BASE}/users/${userId}`);
+                const user = await res.json();
+                userChannels = user.notification_channels || [];
+            } catch (e) { console.error("Error loading channels", e); }
+        }
+
+        async function loadDevices() {
+            try {
+                const userId = localStorage.getItem('user_id') || 1;
+                const res = await fetch(`${API_BASE}/devices?user_id=${userId}&_t=${Date.now()}`);
+                devices = await res.json();
+                renderDevices();
+            } catch (e) { showAlert('Error loading devices', 'error'); }
+        }
+
+        function renderDevices() {
+            const grid = document.getElementById('devicesGrid');
+            if (devices.length === 0) { grid.innerHTML = '<p style="text-align:center; grid-column:1/-1; padding:4rem;">No devices found.</p>'; return; }
+            grid.innerHTML = devices.map(d => `
+                <div class="device-card">
+                    <div class="device-card-header">
+                        <div><div class="device-name">${VEHICLE_ICONS[d.vehicle_type] || '📡'} ${d.name}</div><div class="device-imei">${d.imei}</div></div>
+                        <div class="device-status ${d.is_active ? 'active' : 'inactive'}">${d.is_active ? 'Active' : 'Inactive'}</div>
+                    </div>
+                    <div class="device-actions">
+                        <button class="btn btn-secondary" onclick="editDevice(${d.id})">✏️ Edit</button>
+                        <button class="btn btn-secondary" onclick="openRawDataModal(${d.id})">📋 Data</button>
+                        <button class="btn btn-danger" onclick="deleteDevice(${d.id})">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function editDevice(id) {
+            const d = devices.find(x => x.id == id);
+            if (!d) return;
+            editingDeviceId = d.id;
+            document.getElementById('modalTitle').textContent = 'Edit Device';
+            document.getElementById('deviceName').value = d.name;
+            document.getElementById('deviceImei').value = d.imei;
+            document.getElementById('licensePlate').value = d.license_plate || '';
+            document.getElementById('vin').value = d.vin || '';
+            const config = d.config || {};
+            document.getElementById('oilChangeKm').value = config.maintenance?.oil_change_km || 10000;
+            document.getElementById('tireRotationKm').value = config.maintenance?.tire_rotation_km || 8000;
+            renderAlertConfiguration(config);
+            document.getElementById('deviceModal').classList.add('active');
+        }
+
+        function openAddDeviceModal() {
+            editingDeviceId = null;
+            document.getElementById('modalTitle').textContent = 'Add Device';
+            document.getElementById('deviceForm').reset();
+            renderAlertConfiguration({});
+            document.getElementById('deviceModal').classList.add('active');
+        }
+
+        function renderAlertConfiguration(config) {
+            const list = document.getElementById('activeAlertsList');
+            list.innerHTML = ''; activeAlerts.clear();
+            const channelsConfig = config.alert_channels || {};
+            for (const [key, def] of Object.entries(ALERT_TYPES)) {
+                if (config[key] !== undefined && config[key] !== null) {
+                    addAlertRow(key, config[key], channelsConfig[key] || []);
+                }
+            }
+            customRules = (config.custom_rules || []).map(r => typeof r === 'string' ? { name: 'Custom', rule: r, channels: [] } : r);
+            renderCustomRules();
+            updateAddAlertDropdown();
+        }
+
+        function addAlertRow(key, value, selected = []) {
+            activeAlerts.add(key);
+            const def = ALERT_TYPES[key];
+            const div = document.createElement('div');
+            div.className = 'alert-config-item';
+            div.id = `alert-row-${key}`;
+            const chHtml = userChannels.map(c => `<div class="channel-pill ${selected.includes(c.name) ? 'active' : ''}" onclick="this.classList.toggle('active')" data-name="${c.name}">${c.name}</div>`).join('');
+            div.innerHTML = `
+                <div class="alert-config-item-top">
+                    <div><div class="alert-config-label">${def.label}</div><div class="alert-config-desc">${def.desc}</div></div>
+                    <button type="button" class="btn btn-danger" style="padding:0.3rem 0.6rem" onclick="removeAlertRow('${key}')">✕</button>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.5rem"><input type="number" class="alert-config-input" data-key="${key}" value="${value}"><span style="font-size:0.8rem;">${def.unit}</span></div>
+                <div class="channel-selector" id="channels-${key}">${chHtml}</div>
+            `;
+            document.getElementById('activeAlertsList').appendChild(div);
+            updateAddAlertDropdown();
+        }
+
+        function removeAlertRow(key) { document.getElementById(`alert-row-${key}`).remove(); activeAlerts.delete(key); updateAddAlertDropdown(); }
+        function updateAddAlertDropdown() {
+            const s = document.getElementById('addAlertSelect'); s.innerHTML = '<option value="">+ Add alert...</option>';
+            for (const [k, d] of Object.entries(ALERT_TYPES)) if (!activeAlerts.has(k)) s.innerHTML += `<option value="${k}">${d.label}</option>`;
+        }
+        function addSelectedAlert() { const k = document.getElementById('addAlertSelect').value; if (k) addAlertRow(k, ALERT_TYPES[k].default); }
+
+        function renderCustomRules() {
+            const c = document.getElementById('customRulesList'); c.innerHTML = '';
+            customRules.forEach((r, i) => {
+                const div = document.createElement('div'); div.className = 'alert-config-item';
+                const chHtml = userChannels.map(ch => `<div class="channel-pill ${(r.channels || []).includes(ch.name) ? 'active' : ''}" onclick="toggleCustomRuleChannel(${i}, '${ch.name}', this)">${ch.name}</div>`).join('');
+                div.innerHTML = `<div class="alert-config-item-top"><div><div class="alert-config-label">${r.name}</div><div class="alert-config-desc">${r.rule}</div></div><button type="button" class="btn btn-danger" style="padding:0.3rem 0.6rem" onclick="removeCustomRule(${i})">✕</button></div><div class="channel-selector">${chHtml}</div>`;
+                c.appendChild(div);
+            });
+        }
+        function toggleCustomRuleChannel(i, n, el) {
+            el.classList.toggle('active'); if (!customRules[i].channels) customRules[i].channels = [];
+            const idx = customRules[i].channels.indexOf(n);
+            if (idx > -1) customRules[i].channels.splice(idx, 1); else customRules[i].channels.push(n);
+        }
+        function addCustomRule() {
+            const n = document.getElementById('newRuleName').value.trim(); const r = document.getElementById('newRuleCond').value.trim();
+            if (n && r) { customRules.push({ name: n, rule: r, channels: [] }); document.getElementById('newRuleName').value = ''; document.getElementById('newRuleCond').value = ''; renderCustomRules(); }
+        }
+        function removeCustomRule(i) { customRules.splice(i, 1); renderCustomRules(); }
+
+        async function openRawDataModal(id) {
+            currentPage = 1; 
+            document.getElementById('rawDataModal').classList.add('active');
+            document.getElementById('rawDataBody').innerHTML = '<tr><td colspan="8" style="text-align:center;">Loading...</td></tr>';
+            try {
+                const res = await fetch(`${API_BASE}/positions/history`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device_id: id, start_time: new Date(Date.now() - 86400000).toISOString(), end_time: new Date().toISOString(), max_points: 1000, order: 'desc' }) });
+                const data = await res.json(); rawData = data.features || []; renderRawDataPage();
+            } catch (e) { document.getElementById('rawDataBody').innerHTML = '<tr><td colspan="8" style="text-align:center; color:red;">Error.</td></tr>'; }
+        }
+        function renderRawDataPage() {
+            const start = (currentPage - 1) * itemsPerPage; const items = rawData.slice(start, start + itemsPerPage);
+            const body = document.getElementById('rawDataBody'); body.innerHTML = '';
+            items.forEach(item => {
+                const p = item.properties || {}; const c = item.geometry.coordinates || [0,0];
+                const row = document.createElement('tr');
+                row.innerHTML = `<td>${new Date(p.time).toLocaleString()}</td><td>${c[1].toFixed(5)}</td><td>${c[0].toFixed(5)}</td><td>${(p.speed || 0).toFixed(1)}</td><td>${(p.course || 0).toFixed(0)}°</td><td>${p.satellites || 0}</td><td>${p.ignition ? 'ON' : 'OFF'}</td><td style="font-size:0.7rem; word-break:break-all;">${JSON.stringify(p.sensors)}</td>`;
+                body.appendChild(row);
+            });
+            const max = Math.ceil(rawData.length / itemsPerPage) || 1;
+            document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${max}`;
+            document.getElementById('prevPageBtn').disabled = currentPage === 1;
+            document.getElementById('nextPageBtn').disabled = currentPage === max;
+        }
+        function changeRawDataPage(d) { currentPage += d; renderRawDataPage(); }
+
+        async function handleSubmit(e) {
+            e.preventDefault(); const b = document.getElementById('submitBtn'); b.disabled = true;
+            document.getElementById('submitLoading').style.display = 'inline-block'; document.getElementById('submitText').style.display = 'none';
+            const config = { alert_channels: {}, custom_rules: customRules, maintenance: { oil_change_km: parseInt(document.getElementById('oilChangeKm').value), tire_rotation_km: parseInt(document.getElementById('tireRotationKm').value) } };
+            document.querySelectorAll('#activeAlertsList .alert-config-item').forEach(item => {
+                const input = item.querySelector('.alert-config-input'); const k = input.dataset.key;
+                config[k] = parseFloat(input.value);
+                const sel = []; item.querySelectorAll('.channel-pill.active').forEach(p => sel.push(p.dataset.name));
+                config.alert_channels[k] = sel;
+            });
+            
+            let protocol = DEFAULT_PROTOCOL;
+            let vehicleType = DEFAULT_TYPE;
+            if (editingDeviceId) {
+                const d = devices.find(x => x.id == editingDeviceId);
+                if (d) {
+                    protocol = d.protocol;
+                    vehicleType = d.vehicle_type;
+                }
+            }
+
+            const data = { 
+                name: document.getElementById('deviceName').value, 
+                imei: document.getElementById('deviceImei').value, 
+                protocol: protocol, 
+                vehicle_type: vehicleType, 
+                license_plate: document.getElementById('licensePlate').value, 
+                vin: document.getElementById('vin').value, 
+                config: config 
+            };
+            try {
+                const method = editingDeviceId ? 'PUT' : 'POST'; const url = editingDeviceId ? `${API_BASE}/devices/${editingDeviceId}` : `${API_BASE}/devices`;
+                const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+                if (res.ok) { closeDeviceModal(); loadDevices(); }
+                else { const err = await res.json(); showAlert(err.detail || 'Error saving', 'error'); }
+            } catch (err) { showAlert('Error saving', 'error'); } finally { b.disabled = false; document.getElementById('submitLoading').style.display = 'none'; document.getElementById('submitText').style.display = 'inline'; }
+        }
+
+        function deleteDevice(id) { if (confirm('Delete?')) fetch(`${API_BASE}/devices/${id}`, { method: 'DELETE' }).then(res => res.ok && loadDevices()); }
+        function closeDeviceModal() { document.getElementById('deviceModal').classList.remove('active'); }
+        function closeRawDataModal() { document.getElementById('rawDataModal').classList.remove('active'); }
+        function showAlert(m, t) { const c = document.getElementById('alertContainer'); const a = document.createElement('div'); a.className = `alert alert-${t}`; a.innerHTML = `<span>${m}</span>`; c.appendChild(a); setTimeout(() => a.remove(), 3000); }
+    </script>
+</body>
+</html>

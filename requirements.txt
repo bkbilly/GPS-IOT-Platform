@@ -1,0 +1,57 @@
+# GPS/IoT Platform - Requirements
+# Python 3.10+
+
+# Core Async Runtime
+uvloop==0.22.1
+asyncio-mqtt==0.16.2
+
+# Web Framework
+fastapi==0.129.0
+uvicorn[standard]==0.40.0
+websockets==16.0
+python-multipart==0.0.22
+
+# Database & ORM
+asyncpg==0.31.0
+SQLAlchemy==2.0.46
+alembic==1.18.4
+GeoAlchemy2==0.18.1
+psycopg2-binary==2.9.11
+
+# Redis & Caching
+redis[hiredis]==7.1.1
+aioredis==2.0.1
+
+# Validation & Serialization
+pydantic==2.12.5
+pydantic-settings==2.12.0
+
+# GIS & Spatial
+shapely==2.1.2
+geojson==3.2.0
+pyproj==3.7.2
+
+# Rule Engine & Alerts
+rule-engine==4.5.3
+apprise==1.9.7
+
+# Utilities
+python-dateutil==2.9.0
+pytz==2025.2
+structlog==25.5.0
+tenacity==9.1.4
+
+# Protocol Parsing
+construct==2.10.70
+crcmod==1.7
+bcrypt==5.0.0
+
+# Geocoding (Optional)
+geopy==2.4.1
+
+# Testing
+pytest==9.0.2
+pytest-asyncio==1.3.0
+httpx==0.28.1
+
+PyJWT==2.11.0

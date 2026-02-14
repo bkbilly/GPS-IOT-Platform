@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - GPS Fleet Tracker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #131825;
+            --bg-tertiary: #1a2035;
+            --text-primary: #e5e7eb;
+            --accent-primary: #3b82f6;
+            --accent-secondary: #8b5cf6;
+            --border-color: #374151;
+        }
+        
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        body::before {
+            content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%;
+            background: radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.1) 0%, transparent 50%);
+            animation: pulse 10s ease infinite; z-index: -1;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+        .login-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 3rem;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+
+        .logo { font-size: 3rem; margin-bottom: 1rem; }
+        h1 { margin-bottom: 0.5rem; font-weight: 700; }
+        p { color: #9ca3af; margin-bottom: 2rem; font-size: 0.9rem; }
+
+        .form-group { margin-bottom: 1.5rem; text-align: left; }
+        .form-label { display: block; font-size: 0.85rem; margin-bottom: 0.5rem; color: #9ca3af; }
+        .form-input {
+            width: 100%; padding: 0.75rem 1rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+        .form-input:focus { outline: none; border-color: var(--accent-primary); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
+
+        .btn {
+            width: 100%; padding: 0.75rem;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border: none; border-radius: 8px;
+            color: white; font-weight: 600; font-size: 1rem;
+            cursor: pointer; transition: transform 0.2s;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3); }
+
+        .error-msg { color: #ef4444; font-size: 0.85rem; margin-top: 1rem; display: none; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="logo">🛰️</div>
+        <h1>Welcome Back</h1>
+        <p>Sign in to your GPS Fleet Tracker</p>
+        
+        <form onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <label class="form-label">Username</label>
+                <input type="text" id="username" class="form-input" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" id="password" class="form-input" required>
+            </div>
+            <button type="submit" class="btn" id="loginBtn">Sign In</button>
+            <div class="error-msg" id="errorMsg">Invalid credentials</div>
+        </form>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api';
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const btn = document.getElementById('loginBtn');
+            const err = document.getElementById('errorMsg');
+            
+            btn.disabled = true;
+            btn.textContent = 'Signing in...';
+            err.style.display = 'none';
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const res = await fetch(`${API_BASE}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    localStorage.setItem('auth_token', data.access_token);
+                    localStorage.setItem('user_id', data.user_id);
+                    localStorage.setItem('username', data.username);
+                    window.location.href = 'gps-dashboard.html';
+                } else {
+                    err.textContent = 'Invalid username or password';
+                    err.style.display = 'block';
+                }
+            } catch (e) {
+                err.textContent = 'Connection error. Please try again.';
+                err.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Sign In';
+            }
+        }
+    </script>
+</body>
+</html>

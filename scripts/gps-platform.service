@@ -1,0 +1,31 @@
+[Unit]
+Description=GPS/IoT Platform - High-Performance Tracking System
+After=network.target postgresql.service redis.service
+Requires=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=gps-platform
+Group=gps-platform
+WorkingDirectory=/opt/gps-platform
+Environment="PATH=/opt/gps-platform/venv/bin"
+ExecStart=/opt/gps-platform/venv/bin/python main.py
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=append:/var/log/gps-platform/app.log
+StandardError=append:/var/log/gps-platform/error.log
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
