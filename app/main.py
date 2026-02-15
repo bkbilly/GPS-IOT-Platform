@@ -531,6 +531,182 @@ async def get_device_statistics(device_id: int, start_date: Optional[datetime] =
     return await db.get_device_statistics(device_id, start_date, end_date)
 
 
+@app.get("/api/devices/{device_id}/command-support")
+async def check_command_support(device_id: int):
+    """
+    Check if device protocol supports commands and get available commands.
+    """
+    db = get_db()
+    device = await db.get_device_by_id(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    decoder = ProtocolRegistry.get_decoder(device.protocol)
+    if not decoder:
+        return {
+            "supports_commands": False,
+            "available_commands": [],
+            "protocol": device.protocol,
+            "command_info": {}
+        }
+    
+    supports_commands = False
+    available_commands = []
+    command_info = {}
+    
+    # Try to get available commands from decoder
+    if hasattr(decoder, 'get_available_commands'):
+        try:
+            available_commands = decoder.get_available_commands()
+            supports_commands = len(available_commands) > 0
+            
+            if hasattr(decoder, 'get_command_info'):
+                for cmd in available_commands:
+                    command_info[cmd] = decoder.get_command_info(cmd)
+        except Exception as e:
+            print(f"Error getting available commands: {e}")
+    else:
+        # Fallback to testing common command types
+        test_commands = ["reset", "interval", "reboot", "custom"]
+        for cmd_type in test_commands:
+            try:
+                result = await decoder.encode_command(cmd_type, {})
+                if result and len(result) > 0:
+                    supports_commands = True
+                    available_commands.append(cmd_type)
+            except:
+                pass
+    
+    return {
+        "supports_commands": supports_commands,
+        "available_commands": available_commands,
+        "protocol": device.protocol,
+        "command_info": command_info
+    }
+
+
+@app.post("/api/devices/{device_id}/command/preview")
+async def preview_command(device_id: int, command_data: dict):
+    """
+    Preview what a command will look like when encoded.
+    Shows hex output before sending.
+    """
+    db = get_db()
+    device = await db.get_device_by_id(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    decoder = ProtocolRegistry.get_decoder(device.protocol)
+    if not decoder:
+        raise HTTPException(status_code=400, detail="Protocol not found")
+    
+    command_type = command_data.get('command_type', '')
+    payload = command_data.get('payload', '')
+    
+    try:
+        encoded = await decoder.encode_command(
+            command_type,
+            {"payload": payload} if payload else {}
+        )
+        
+        if not encoded or len(encoded) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Command could not be encoded"
+            )
+        
+        # ASCII representation
+        try:
+            ascii_repr = encoded.decode('ascii', errors='replace')
+        except:
+            ascii_repr = "Non-ASCII binary data"
+        
+        return {
+            "hex": encoded.hex(),
+            "bytes": len(encoded),
+            "ascii": ascii_repr,
+            "success": True
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Command encoding failed: {str(e)}"
+        )
+
+
+@app.post("/api/devices/{device_id}/command")
+async def send_command(device_id: int, command: CommandCreate):
+    """
+    Queue a command to be sent to device.
+    Enhanced version with validation and preview.
+    """
+    db = get_db()
+    
+    # Verify device exists
+    device = await db.get_device_by_id(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    # Verify protocol supports commands
+    decoder = ProtocolRegistry.get_decoder(device.protocol)
+    if not decoder:
+        raise HTTPException(status_code=400, detail="Protocol not found")
+    
+    # Test encode to ensure it's supported
+    try:
+        test_bytes = await decoder.encode_command(
+            command.command_type,
+            {"payload": command.payload} if command.payload else {}
+        )
+        
+        if not test_bytes or len(test_bytes) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Protocol {device.protocol} does not support '{command.command_type}' command"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Command encoding failed: {str(e)}"
+        )
+    
+    # Queue the command
+    command.device_id = device_id
+    result = await db.create_command(command)
+    
+    # Add the encoded preview to the response
+    if hasattr(result, '__dict__'):
+        result_dict = result.__dict__.copy()
+    else:
+        result_dict = dict(result)
+    result_dict['encoded_preview'] = test_bytes.hex()
+    
+    return result_dict
+
+
+@app.get("/api/devices/{device_id}/commands")
+async def get_device_commands(device_id: int, status: str = None):
+    """
+    Get command history for a device.
+    
+    Args:
+        device_id: Device ID
+        status: Optional filter by status (pending, sent, failed, expired)
+    """
+    db = get_db()
+    device = await db.get_device_by_id(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    commands = await db.get_device_commands(device_id, status=status)
+    return commands
+
+
+
 # ==================== WebSocket Endpoint ====================
 
 @app.websocket("/ws/{user_id}")

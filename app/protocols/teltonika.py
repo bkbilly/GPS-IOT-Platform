@@ -1,6 +1,6 @@
 import struct
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Tuple, Union
+from typing import Dict, Any, Optional, Tuple, List, Union
 import logging
 from models.schemas import NormalizedPosition
 from . import BaseProtocolDecoder, ProtocolRegistry
@@ -11,6 +11,22 @@ logger = logging.getLogger(__name__)
 class TeltonikaDecoder(BaseProtocolDecoder):
     PORT = 5027
     PROTOCOL_TYPE = 'tcp'
+
+    # Command mapping for Teltonika SMS/GPRS commands
+    COMMAND_MAPPING = {
+        'cpureset': 'cpureset',
+        'getver': 'getver',
+        'getgps': 'getgps',
+        'readio': 'readio',
+        'getrecord': 'getrecord',
+        'ggps': 'ggps',
+        'getinfo': 'getinfo',
+        'setparam': 'setparam',
+        'getparam': 'getparam',
+        'flush': 'flush',
+        'readstatus': 'readstatus',
+        'getimei': 'getimei',
+    }
     
     IO_MAP = {
         1: 'din1', 2: 'din2', 3: 'din3', 4: 'din4', 9: 'adc1', 10: 'adc2', 11: 'iccid',
@@ -180,5 +196,194 @@ class TeltonikaDecoder(BaseProtocolDecoder):
             logger.error(f"Codec 8{'E' if extended else ''} decode error: {e}")
             return None
 
-    async def encode_command(self, command_type: str, params: Dict[str, Any]) -> bytes: 
-        return b''
+    async def encode_command(self, command_type: str, params: Dict[str, Any]) -> bytes:
+        """
+        Encode commands for Teltonika devices.
+        
+        Args:
+            command_type: Type of command ('custom' or predefined command name)
+            params: Dictionary containing 'payload' for custom commands
+        
+        Returns:
+            bytes: Encoded command in Teltonika Codec 12 format
+        """
+        if not params:
+            params = {}
+        
+        # Handle custom commands
+        if command_type == 'custom':
+            payload = params.get('payload', '')
+            if not payload:
+                return b''
+            
+            # Check if payload is hex string
+            if len(payload) % 2 == 0 and all(c in '0123456789ABCDEFabcdef' for c in payload):
+                try:
+                    return bytes.fromhex(payload)
+                except ValueError:
+                    pass
+            
+            # Treat as text command
+            command_text = payload.strip()
+        
+        # Handle predefined commands
+        elif command_type.lower() in self.COMMAND_MAPPING:
+            command_text = self.COMMAND_MAPPING[command_type.lower()]
+            
+            # Special handling for setparam
+            if command_type.lower() == 'setparam':
+                param_id = params.get('param_id', '')
+                param_value = params.get('param_value', '')
+                if param_id and param_value:
+                    command_text = f"setparam {param_id}:{param_value}"
+                else:
+                    return b''
+        else:
+            return b''
+        
+        return self._encode_text_command(command_text)
+    
+    def _encode_text_command(self, command_text: str) -> bytes:
+        """
+        Encode a text command into Teltonika Codec 12 binary format.
+        
+        Format:
+        - Preamble: 4 bytes (00 00 00 00)
+        - Data Field Length: 4 bytes (big-endian)
+        - Codec ID: 1 byte (0x0C)
+        - Command Quantity 1: 1 byte (0x01)
+        - Command Type: 1 byte (0x05)
+        - Command Size: 4 bytes (big-endian)
+        - Command: N bytes (ASCII)
+        - Command Quantity 2: 1 byte (0x01)
+        - CRC-16: 4 bytes (big-endian)
+        """
+        cmd_bytes = command_text.encode('ascii')
+        cmd_length = len(cmd_bytes)
+        
+        # Protocol constants
+        codec_id = 0x0C
+        cmd_quantity = 0x01
+        cmd_type = 0x05
+        
+        # Build data part (what gets CRC'd)
+        data_part = b''
+        data_part += struct.pack('B', codec_id)
+        data_part += struct.pack('B', cmd_quantity)
+        data_part += struct.pack('B', cmd_type)
+        data_part += struct.pack('>I', cmd_length)
+        data_part += cmd_bytes
+        data_part += struct.pack('B', cmd_quantity)
+        
+        # Calculate CRC-16
+        crc = self._calculate_crc16(data_part)
+        
+        # Data Field Length = Quantity1 + Type + Command + Quantity2
+        data_field_length = 1 + 1 + cmd_length + 1
+        
+        # Build complete message
+        preamble = b'\x00\x00\x00\x00'
+        length_field = struct.pack('>I', data_field_length)
+        crc_bytes = struct.pack('>I', crc)
+        
+        return preamble + length_field + data_part + crc_bytes
+    
+    def _calculate_crc16(self, data: bytes) -> int:
+        """
+        Calculate CRC-16 using CRC-16/IBM (Modbus) algorithm.
+        
+        Args:
+            data: Data bytes to calculate CRC for
+            
+        Returns:
+            int: CRC-16 value
+        """
+        crc = 0
+        for byte in data:
+            crc ^= byte
+            for _ in range(8):
+                if crc & 1:
+                    crc = (crc >> 1) ^ 0xA001
+                else:
+                    crc >>= 1
+        return crc & 0xFFFF
+    
+    def get_available_commands(self) -> List[str]:
+        """Get list of available commands."""
+        return list(self.COMMAND_MAPPING.keys()) + ['custom']
+    
+    def get_command_info(self, command: str) -> Dict[str, Any]:
+        """Get information about a specific command."""
+        info_map = {
+            'cpureset': {
+                'description': 'Reset the device CPU',
+                'example': 'cpureset',
+                'requires_params': False
+            },
+            'getver': {
+                'description': 'Get firmware version',
+                'example': 'getver',
+                'requires_params': False
+            },
+            'getgps': {
+                'description': 'Get current GPS position',
+                'example': 'getgps',
+                'requires_params': False
+            },
+            'readio': {
+                'description': 'Read I/O status',
+                'example': 'readio',
+                'requires_params': False
+            },
+            'getrecord': {
+                'description': 'Get last record',
+                'example': 'getrecord',
+                'requires_params': False
+            },
+            'ggps': {
+                'description': 'Get GPS coordinates',
+                'example': 'ggps',
+                'requires_params': False
+            },
+            'getinfo': {
+                'description': 'Get device information',
+                'example': 'getinfo',
+                'requires_params': False
+            },
+            'setparam': {
+                'description': 'Set a device parameter',
+                'example': 'setparam 1000:60',
+                'requires_params': True
+            },
+            'getparam': {
+                'description': 'Get parameter value',
+                'example': 'getparam 1000',
+                'requires_params': False
+            },
+            'flush': {
+                'description': 'Flush stored records',
+                'example': 'flush',
+                'requires_params': False
+            },
+            'readstatus': {
+                'description': 'Read device status',
+                'example': 'readstatus',
+                'requires_params': False
+            },
+            'getimei': {
+                'description': 'Get IMEI number',
+                'example': 'getimei',
+                'requires_params': False
+            },
+            'custom': {
+                'description': 'Send custom command (text or hex)',
+                'example': 'Any text command or hex string',
+                'requires_params': True
+            }
+        }
+        
+        return info_map.get(command, {
+            'description': 'Unknown command',
+            'example': '',
+            'requires_params': False
+        })
