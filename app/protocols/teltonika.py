@@ -229,15 +229,7 @@ class TeltonikaDecoder(BaseProtocolDecoder):
         # Handle predefined commands
         elif command_type.lower() in self.COMMAND_MAPPING:
             command_text = self.COMMAND_MAPPING[command_type.lower()]
-            
-            # Special handling for setparam
-            if command_type.lower() == 'setparam':
-                param_id = params.get('param_id', '')
-                param_value = params.get('param_value', '')
-                if param_id and param_value:
-                    command_text = f"setparam {param_id}:{param_value}"
-                else:
-                    return b''
+
         else:
             return b''
         
@@ -358,7 +350,7 @@ class TeltonikaDecoder(BaseProtocolDecoder):
             'getparam': {
                 'description': 'Get parameter value',
                 'example': 'getparam 1000',
-                'requires_params': False
+                'requires_params': True
             },
             'flush': {
                 'description': 'Flush stored records',

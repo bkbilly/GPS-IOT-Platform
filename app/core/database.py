@@ -493,6 +493,28 @@ class DatabaseService:
             result = await session.execute(select(CommandQueue).where(CommandQueue.id == command_id))
             return result.scalar_one_or_none()
 
+    async def get_device_commands(self, device_id: int, status: Optional[str] = None) -> List[CommandQueue]:
+        """
+        Get command history for a device, optionally filtered by status.
+        
+        Args:
+            device_id: The device ID
+            status: Optional status filter ('pending', 'sent', 'acked', 'failed', 'timeout')
+        
+        Returns:
+            List of CommandQueue objects ordered by creation time (newest first)
+        """
+        async with self.get_session() as session:
+            query = select(CommandQueue).where(CommandQueue.device_id == device_id)
+            
+            if status:
+                query = query.where(CommandQueue.status == status)
+            
+            query = query.order_by(CommandQueue.created_at.desc())
+            
+            result = await session.execute(query)
+            return result.scalars().all()
+
     async def get_offline_devices(self) -> List[tuple[Device, DeviceState]]:
         async with self.get_session() as session:
             result = await session.execute(select(Device, DeviceState).join(DeviceState, Device.id == DeviceState.device_id).where(and_(Device.is_active == True, DeviceState.is_online == True)))

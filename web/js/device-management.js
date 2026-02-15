@@ -104,7 +104,7 @@ async function loadDevices() {
         if (!res.ok) throw new Error('Failed to load devices');
         devices = await res.json();
         
-        // Load state for each device
+        // Load state and command support for each device
         for (const device of devices) {
             try {
                 const stateRes = await fetch(`${API_BASE}/devices/${device.id}/state`);
@@ -113,6 +113,20 @@ async function loadDevices() {
                 }
             } catch (e) {
                 console.error(`Failed to load state for device ${device.id}`, e);
+            }
+            
+            // Check command support - NEW CODE
+            try {
+                const commandRes = await fetch(`${API_BASE}/devices/${device.id}/command-support`);
+                if (commandRes.ok) {
+                    const commandData = await commandRes.json();
+                    device.supports_commands = commandData.supports_commands;
+                } else {
+                    device.supports_commands = false;
+                }
+            } catch (e) {
+                console.error(`Failed to check command support for device ${device.id}`, e);
+                device.supports_commands = false;
             }
         }
         
@@ -145,6 +159,9 @@ function renderDevices() {
             ? formatDateToLocal(d.state.last_update)
             : 'Never';
         
+        // Check if device supports commands (assume true unless explicitly false)
+        const supportsCommands = d.supports_commands !== false;
+        
         return `
         <div class="device-card">
             <div class="device-card-header">
@@ -175,9 +192,11 @@ function renderDevices() {
                 <button class="btn btn-secondary" onclick="openRawDataModal(${d.id})" style="flex: 1;">
                     📋 Raw Data
                 </button>
-                <button class="btn btn-danger" onclick="deleteDevice(${d.id})" style="flex: 1;">
-                    🗑️ Delete
+                ${supportsCommands ? `
+                <button class="btn btn-secondary" onclick="openCommandModal(${d.id})" style="flex: 1;">
+                    📡 Commands
                 </button>
+                ` : ''}
             </div>
         </div>
     `}).join('');
@@ -188,15 +207,13 @@ function openAddDeviceModal() {
     document.getElementById('modalTitle').textContent = 'Add New Device';
     document.getElementById('submitText').textContent = 'Add Device';
     document.getElementById('deviceForm').reset();
-    
-    // Clear odometer
+    document.getElementById('deviceProtocol').value = DEFAULT_PROTOCOL;
     document.getElementById('currentOdometer').value = '0.0';
-
-    // Default Alerts
-    renderAlertConfiguration({
-        custom_rules: []
-    });
     
+    // ADD THIS LINE
+    document.getElementById('deleteDeviceBtn').style.display = 'none';
+    
+    renderAlertConfiguration({ custom_rules: [] });
     document.getElementById('deviceModal').classList.add('active');
 }
 
@@ -212,6 +229,7 @@ function editDevice(deviceId) {
     // Populate form
     document.getElementById('deviceName').value = d.name;
     document.getElementById('deviceImei').value = d.imei;
+    document.getElementById('deviceProtocol').value = d.protocol || DEFAULT_PROTOCOL;
     document.getElementById('vehicleType').value = d.vehicle_type || '';
     document.getElementById('licensePlate').value = d.license_plate || '';
     document.getElementById('vin').value = d.vin || '';
@@ -230,7 +248,8 @@ function editDevice(deviceId) {
     
     // Alert Config
     renderAlertConfiguration(config);
-    
+    document.getElementById('deleteDeviceBtn').style.display = 'block';
+
     document.getElementById('deviceModal').classList.add('active');
 }
 
@@ -531,7 +550,6 @@ async function handleSubmit(event) {
     });
 
     let currentConfig = {};
-    let protocol = DEFAULT_PROTOCOL;
     let vehicleType = DEFAULT_TYPE;
     
     if (editingDeviceId) {
@@ -546,7 +564,7 @@ async function handleSubmit(event) {
     const deviceData = {
         name: document.getElementById('deviceName').value,
         imei: document.getElementById('deviceImei').value,
-        protocol: protocol,
+        protocol: document.getElementById('deviceProtocol').value || DEFAULT_PROTOCOL,
         vehicle_type: document.getElementById('vehicleType').value || vehicleType,
         license_plate: document.getElementById('licensePlate').value || null,
         vin: document.getElementById('vin').value || null,
@@ -624,6 +642,35 @@ async function deleteDevice(deviceId) {
         }
     } catch (error) {
         showAlert('Failed to delete', 'error');
+    }
+}
+
+async function deleteCurrentDevice() {
+    if (!editingDeviceId) return;
+    
+    const device = devices.find(d => d.id === editingDeviceId);
+    const deviceName = device ? device.name : 'this device';
+    
+    if (!confirm(`Are you sure you want to delete "${deviceName}"?\n\nThis action cannot be undone.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/devices/${editingDeviceId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            showAlert('Device deleted successfully', 'success');
+            closeDeviceModal();
+            await loadDevices();
+        } else {
+            const error = await response.json();
+            showAlert(error.detail || 'Failed to delete device', 'error');
+        }
+    } catch (error) {
+        console.error('Delete error:', error);
+        showAlert('Failed to delete device', 'error');
     }
 }
 
