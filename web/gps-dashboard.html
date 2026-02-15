@@ -38,9 +38,16 @@
         
         <aside class="sidebar">
             <div class="sidebar-section" id="sidebarDeviceList" style="flex: 1; overflow-y: auto;">
-                <h3 class="section-title">Active Vehicles</h3>
+                <div class="search-container">
+                    <input type="text" 
+                           class="search-input" 
+                           id="deviceSearchInput" 
+                           placeholder="🔍 Search vehicles..." 
+                           oninput="filterDevices()">
+                </div>
                 <div class="device-list" id="deviceList"></div>
             </div>
+
             <div class="sidebar-section" id="sidebarHistoryDetails" style="display: none; flex: 1; overflow-y: auto;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                     <h3 class="section-title" id="historyDeviceName" style="margin-bottom: 0;">History Details</h3>
@@ -54,7 +61,7 @@
                 <div class="sidebar-row">
                     <a href="device-management.html" class="sidebar-action-btn" title="Manage Devices">
                         <span class="sidebar-action-icon">⚙️</span>
-                        <span>Manage</span>
+                        <span>Devices</span>
                     </a>
                     <a href="user-settings.html" class="sidebar-action-btn" title="User Settings">
                         <span class="sidebar-action-icon">🔧</span>
@@ -70,7 +77,7 @@
                 <div class="user-profile">
                     <div class="user-info">
                         <span class="user-name" id="userNameDisplay">User</span>
-                        <span class="user-role">Administrator</span>
+                        <span class="user-role" id="userRoleDisplay">User</span>
                     </div>
                     <button class="logout-btn" onclick="handleLogout()">Logout</button>
                 </div>

@@ -88,10 +88,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Set Username in sidebar
     const username = localStorage.getItem('username');
+    const userId = parseInt(localStorage.getItem('user_id'));
     if (username) {
         const userDisplay = document.getElementById('userNameDisplay');
         if (userDisplay) userDisplay.textContent = username;
     }
+    if (userId === 1) {
+        document.getElementById('userRoleDisplay').textContent = 'Administrator';
+    } else {
+        document.getElementById('userRoleDisplay').textContent = 'User';
+    }
+
     
     // Mutation Observer for Alert Button
     const observer = new MutationObserver((mutations) => {
@@ -197,6 +204,12 @@ async function loadDeviceState(deviceId) {
 
 // Render Device List
 function renderDeviceList() {
+    // Clear search when re-rendering (optional, but good UX)
+    const searchInput = document.getElementById('deviceSearchInput');
+    if (searchInput) {
+        searchInput.value = '';
+    }
+
     const list = document.getElementById('deviceList');
     list.innerHTML = '';
     
@@ -447,8 +460,14 @@ async function handleHistorySubmit(e) {
 }
 
 async function loadHistory(deviceId, startTime, endTime) {
-    if (polylines['history']) map.removeLayer(polylines['history']);
-    if (markers['history_pos']) map.removeLayer(markers['history_pos']);
+    if (polylines['history']) {
+        map.removeLayer(polylines['history']);
+        delete polylines['history'];
+    }
+    if (markers['history_pos']) {
+        map.removeLayer(markers['history_pos']);
+        delete markers['history_pos'];
+    }
     stopPlayback();
 
     // FIXED: Hide live marker for this device when history loads
@@ -490,8 +509,14 @@ async function loadHistory(deviceId, startTime, endTime) {
 
 function exitHistoryMode() {
     stopPlayback();
-    if (polylines['history']) map.removeLayer(polylines['history']);
-    if (markers['history_pos']) map.removeLayer(markers['history_pos']);
+    if (polylines['history']) {
+        map.removeLayer(polylines['history']);
+        delete polylines['history'];
+    }
+    if (markers['history_pos']) {
+        map.removeLayer(markers['history_pos']);
+        delete markers['history_pos'];
+    }
     
     // FIXED: Restore live marker when exiting history mode
     if (markers[historyDeviceId]) {
@@ -754,4 +779,29 @@ function toggleTraffic() {
 
 function toggleSatellite() {
     alert('Satellite view not implemented in demo');
+}
+
+// Filter devices based on search input
+function filterDevices() {
+    const searchTerm = document.getElementById('deviceSearchInput').value.toLowerCase().trim();
+    const deviceCards = document.querySelectorAll('.device-card');
+    
+    deviceCards.forEach(card => {
+        const deviceName = card.querySelector('.device-name').textContent.toLowerCase();
+        const deviceId = card.id.replace('device-card-', '');
+        const device = devices.find(d => d.id == deviceId);
+        
+        // Search in name, IMEI, and license plate
+        const searchableText = [
+            deviceName,
+            device?.imei || '',
+            device?.license_plate || ''
+        ].join(' ').toLowerCase();
+        
+        if (searchableText.includes(searchTerm)) {
+            card.style.display = '';
+        } else {
+            card.style.display = 'none';
+        }
+    });
 }

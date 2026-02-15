@@ -109,7 +109,9 @@
                             <label class="form-label">
                                 Current Odometer (km)
                                 <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">
-                                    - Adjust only if resetting or correcting the value
+                                    <div style="font-size: 0.8125rem; color: var(--text-muted); margin-top: 0.5rem;">
+                                        Adjust only if resetting or correcting the value
+                                    </div>
                                 </span>
                             </label>
                             <input type="number" id="currentOdometer" class="form-input" placeholder="0" step="0.1" min="0">
@@ -139,7 +141,6 @@
                             <div style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border-color);">
                                 <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1rem;">
                                     <h4 style="font-size: 1rem; margin: 0;">Custom Rules</h4>
-                                    <a href="https://github.com/caronc/apprise" target="_blank" style="font-size: 0.8rem; color: var(--accent-primary); text-decoration: none;">Apprise Documentation ↗</a>
                                 </div>
                                 <div id="customRulesList" class="alert-config-list"></div>
                                 <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem;">
@@ -148,6 +149,62 @@
                                         <input type="text" id="newRuleCond" class="form-input" placeholder="Condition e.g. speed > 120">
                                         <button type="button" class="btn btn-secondary" onclick="addCustomRule()">Add</button>
                                     </div>
+                                    
+                                    <!-- Examples Section -->
+                                    <details style="margin-top: 0.5rem;">
+                                        <summary style="cursor: pointer; color: var(--text-muted); font-size: 0.8125rem; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 6px;">
+                                            📚 View Examples
+                                        </summary>
+                                        <div style="margin-top: 0.75rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 6px; font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.8;">
+                                            <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 0.5rem;">Simple Conditions:</div>
+                                            <div style="font-family: var(--font-mono); margin-left: 1rem;">
+                                                • <code>speed > 120</code> - Speeding over 120 km/h<br>
+                                                • <code>speed < 10 and ignition</code> - Idling (slow + engine on)<br>
+                                                • <code>not ignition</code> - Engine off<br>
+                                                • <code>satellites < 4</code> - Poor GPS signal
+                                            </div>
+                                            
+                                            <div style="font-weight: 600; color: var(--text-primary); margin-top: 1rem; margin-battery: 0.5rem;">Combined Conditions:</div>
+                                            <div style="font-family: var(--font-mono); margin-left: 1rem;">
+                                                • <code>speed > 100 and ignition</code> - High speed while driving<br>
+                                                • <code>speed > 80 and satellites < 5</code> - Speeding with poor GPS<br>
+                                                • <code>ignition and speed == 0</code> - Stopped with engine on<br>
+                                                • <code>speed > 50 and not ignition</code> - Towing detection<br>
+                                                • <code>speed > 0 and satellites < 3</code> - Moving with bad GPS
+                                            </div>
+                                            
+                                            <div style="font-weight: 600; color: var(--text-primary); margin-top: 1rem; margin-bottom: 0.5rem;">Sensor-Based Rules:</div>
+                                            <div style="font-family: var(--font-mono); margin-left: 1rem;">
+                                                • <code>speed > 60 and fuel_level < 10</code> - Low fuel while driving<br>
+                                                • <code>ignition and battery_voltage < 11</code> - Low battery warning<br>
+                                                • <code>temperature > 80 and speed > 0</code> - Engine overheating<br>
+                                                • <code>door_open and speed > 0</code> - Door open while moving<br>
+                                                • <code>fuel_level < 5 and speed > 0</code> - Critical fuel level
+                                            </div>
+                                            
+                                            <div style="font-weight: 600; color: var(--text-primary); margin-top: 1rem; margin-bottom: 0.5rem;">Advanced Combinations:</div>
+                                            <div style="font-family: var(--font-mono); margin-left: 1rem;">
+                                                • <code>speed > 100 and ignition and satellites < 5</code> - Fast + poor GPS<br>
+                                                • <code>ignition and speed < 5 and fuel_level < 20</code> - Idling low fuel<br>
+                                                • <code>speed > 0 and not ignition and satellites > 3</code> - Towing w/ good GPS<br>
+                                                • <code>temperature > 90 and speed > 80 and ignition</code> - Hot + fast<br>
+                                                • <code>battery_voltage < 11.5 and ignition and speed < 10</code> - Battery issue
+                                            </div>
+                                            
+                                            <div style="font-weight: 600; color: var(--text-primary); margin-top: 1rem; margin-bottom: 0.5rem;">Available Attributes:</div>
+                                            <div style="margin-left: 1rem; color: var(--text-muted);">
+                                                <code>speed</code>, <code>ignition</code>, <code>satellites</code>, <code>altitude</code>, 
+                                                <code>course</code>, <code>battery_voltage</code>, <code>fuel_level</code>, 
+                                                <code>temperature</code>, <code>door_open</code>, and any custom sensor attributes
+                                            </div>
+                                            
+                                            <div style="font-weight: 600; color: var(--text-primary); margin-top: 1rem; margin-bottom: 0.5rem;">Operators:</div>
+                                            <div style="margin-left: 1rem; color: var(--text-muted);">
+                                                <code>></code> <code><</code> <code>==</code> <code>!=</code> <code>>=</code> <code><=</code><br>
+                                                <code>and</code> <code>or</code> <code>not</code>
+                                            </div>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>
@@ -310,6 +367,6 @@
     <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/device-management.js"></script>
-    <script src="js/device-management-commands.js"></script>
+    <script src="js/device-commands.js"></script>
 </body>
 </html>
