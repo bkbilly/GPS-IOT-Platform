@@ -1,3 +1,4 @@
+let availableProtocols = [];
 let devices = [];
 let userChannels = [];
 let editingDeviceId = null;
@@ -83,6 +84,7 @@ function formatDateToLocal(dateString) {
 
 document.addEventListener('DOMContentLoaded', async () => {
     checkLogin();
+    await loadAvailableProtocols();
     await loadUserChannels();
     await loadDevices();
 });
@@ -485,7 +487,8 @@ function renderRawDataPage() {
         
         const sensors = p.sensors || {};
         // Simple stringify for attributes column
-        const attributesStr = JSON.stringify(sensors).substring(0, 100) + (JSON.stringify(sensors).length > 100 ? '...' : '');
+        // const attributesStr = JSON.stringify(sensors).substring(0, 100) + (JSON.stringify(sensors).length > 100 ? '...' : '');
+        const attributesStr = Object.entries(sensors).map(([key, value]) => `${key}:${value}`).join('|');
 
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -497,7 +500,7 @@ function renderRawDataPage() {
             <td>${p.satellites || 0}</td>
             <td>${(p.altitude || 0).toFixed(0)} m</td>
             <td>${p.ignition ? 'ON' : 'OFF'}</td>
-            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 0.75rem;" title="${JSON.stringify(sensors)}">
+            <td style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 0.75rem;" title="${JSON.stringify(sensors)}">
                 ${attributesStr}
             </td>
         `;
@@ -686,4 +689,74 @@ function showAlert(message, type) {
         alert.classList.add('alert-hidden');
         setTimeout(() => alert.remove(), 300);
     }, 3000);
+}
+
+async function loadAvailableProtocols() {
+    try {
+        // API_BASE is 'http://localhost:8000/api', but root endpoint is at '/'
+        const baseUrl = API_BASE.replace('/api', '');
+        const response = await fetch(`${baseUrl}/`);
+        
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // The root endpoint returns { protocols: [...] }
+        availableProtocols = data.protocols || [];
+        
+        if (availableProtocols.length === 0) {
+            console.error('No protocols found on server');
+            showAlert('No protocols available. Please check server configuration.', 'error');
+            return;
+        }
+        
+        // Populate the protocol dropdown
+        populateProtocolDropdown();
+        
+        console.log(`✓ Loaded ${availableProtocols.length} protocols:`, availableProtocols);
+    } catch (error) {
+        console.error('Error loading protocols:', error);
+        showAlert('Failed to load available protocols from server', 'error');
+        // Don't populate dropdown if we can't reach the server
+    }
+}
+
+function populateProtocolDropdown() {
+    const select = document.getElementById('deviceProtocol');
+    if (!select) {
+        console.warn('Protocol dropdown element not found');
+        return;
+    }
+    
+    // Clear existing options except the placeholder
+    select.innerHTML = '<option value="">-- Select Protocol --</option>';
+    
+    // Sort protocols alphabetically for better UX
+    const sortedProtocols = [...availableProtocols].sort();
+    
+    // Protocol display name mapping (makes names prettier)
+    const protocolNames = {
+        'teltonika': 'Teltonika',
+        'gt06': 'GT06 / Concox',
+        'osmand': 'OsmAnd',
+        'flespi': 'Flespi',
+        'totem': 'Totem',
+        'tk103': 'TK103',
+        'gps103': 'GPS103',
+        'h02': 'H02'
+    };
+    
+    // Add each protocol as an option
+    sortedProtocols.forEach(protocol => {
+        const option = document.createElement('option');
+        option.value = protocol;
+        // Use display name if available, otherwise capitalize the protocol name
+        option.textContent = protocolNames[protocol] || 
+                            protocol.charAt(0).toUpperCase() + protocol.slice(1);
+        select.appendChild(option);
+    });
+    
+    console.log(`✓ Protocol dropdown populated with ${sortedProtocols.length} protocols`);
 }
