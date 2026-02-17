@@ -35,6 +35,7 @@ import uvicorn
 
 from sqlalchemy import select, insert, update, delete, and_
 from models import User, Device, user_device_association
+from alerts import ALERT_DEFINITIONS
 
 
 
@@ -459,6 +460,23 @@ async def get_device_trips(device_id: int, start_date: Optional[datetime] = Quer
 async def create_geofence(geofence: GeofenceCreate):
     db = get_db()
     return await db.create_geofence(geofence.model_dump())
+
+@app.get("/api/alerts/types")
+async def get_alert_types():
+    """Returns all registered alert type definitions for the frontend."""
+    return {
+        key: {
+            "label":    d.label,
+            "desc":     d.description,
+            "unit":     d.unit,
+            "default":  d.default_value,
+            "min":      d.min_value,
+            "max":      d.max_value,
+            "icon":     d.icon,
+            "severity": d.severity,
+        }
+        for key, d in ALERT_DEFINITIONS.items()
+    }
 
 @app.get("/api/alerts", response_model=List[AlertResponse])
 async def get_alerts(user_id: int = Query(...), unread_only: bool = Query(False)):

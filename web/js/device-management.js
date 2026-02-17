@@ -27,28 +27,14 @@ const VEHICLE_ICONS = {
     scooter:'🛴', tractor:'🚜', arrow:'▲', other:'📦'
 };
 
-const ALERT_TYPES = {
-    speed_tolerance: {
-        label:'Speed Limit Alert',
-        desc:'Alert when speed exceeds this limit (verified after 30 s of continuous speeding).',
-        unit:'km/h', min:0, max:300, default:100
-    },
-    idle_timeout_minutes: {
-        label:'Idle Timeout Alert',
-        desc:'Alert when vehicle idles (ignition on, speed 0) longer than this duration.',
-        unit:'minutes', min:1, max:120, default:10
-    },
-    offline_timeout_hours: {
-        label:'Offline Timeout Alert',
-        desc:'Alert when device stops sending data for this duration.',
-        unit:'hours', min:1, max:168, default:24
-    },
-    towing_threshold_meters: {
-        label:'Towing Alert',
-        desc:'Alert when vehicle moves more than this distance from where ignition was turned OFF.',
-        unit:'meters', min:10, max:1000, default:100
-    }
-};
+let ALERT_TYPES = {};
+
+async function loadAlertTypes() {
+    const res = await fetch(`${API_BASE}/alerts/types`);
+    ALERT_TYPES = await res.json();
+    populateAddAlertDropdown(); // re-render once loaded
+}
+
 
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const DEFAULT_PROTOCOL = 'teltonika';
@@ -62,6 +48,7 @@ function checkLogin() {
 
 document.addEventListener('DOMContentLoaded', async () => {
     checkLogin();
+    await loadAlertTypes();
     await loadAvailableProtocols();
     await loadUserChannels();
     await loadDevices();

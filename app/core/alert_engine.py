@@ -15,6 +15,8 @@ from apprise import Apprise
 from models import Device, DeviceState, User, AlertHistory
 from models.schemas import AlertCreate, AlertType, Severity, NormalizedPosition
 from core.database import get_db
+from alerts import ALERT_REGISTRY
+
 
 logger = logging.getLogger(__name__)
 
@@ -74,51 +76,24 @@ class AlertEngine:
         return True
 
     async def process_position_alerts(self, position, device, state):
-        try:
-            users = device.users
-            if not users: return
-            
-            # Ensure alert_states is initialized
-            if state.alert_states is None:
-                state.alert_states = {}
-            
-            alerts = []
-            
-            # Checks for standard alerts
-            speed_alert = await self._check_speeding(position, device, state)
-            if speed_alert: alerts.append(speed_alert)
-            
-            idle_alert = await self._check_idling(position, device, state)
-            if idle_alert: alerts.append(idle_alert)
-            
-            towing_alert = await self._check_towing(position, device, state)
-            if towing_alert: alerts.append(towing_alert)
-            
-            geofence_alerts = await self._check_geofences(position, device, state)
-            alerts.extend(geofence_alerts)
-            
-            maintenance_alert = await self._check_maintenance(device, state)
-            if maintenance_alert: alerts.append(maintenance_alert)
-            
-            custom_alerts = await self._check_custom_rules(position, device, state)
-            alerts.extend(custom_alerts)
-            
-            # Always update state if it was initialized
-            if state.alert_states is not None:
-                db = get_db()
-                await db.update_device_alert_state(device.id, state.alert_states)
+        if state.alert_states is None:
+            state.alert_states = {}
 
-            # Dispatch collected alerts
-            for alert_data in alerts:
-                # Ensure coordinates are present
-                if 'latitude' not in alert_data:
-                    alert_data['latitude'] = position.latitude
-                    alert_data['longitude'] = position.longitude
-                
-                await self._dispatch_alert(users, device, alert_data)
-                
-        except Exception as e:
-            logger.error(f"Alert processing error: {e}")
+        alerts = []
+        for key, alert_cls in ALERT_REGISTRY.items():
+            if not self._is_alert_active(key, device):
+                continue
+            results = await alert_cls().check_many(position, device, state)
+            alerts.extend(results)
+
+
+        # custom rules still handled separately
+        alerts.extend(await self._check_custom_rules(position, device, state))
+
+        for alert_data in alerts:
+            alert_data.setdefault("latitude", position.latitude)
+            alert_data.setdefault("longitude", position.longitude)
+            await self._dispatch_alert(device.users, device, alert_data)
 
     async def _dispatch_alert(self, users: List[User], device: Device, alert_data: Dict[str, Any]):
         """
