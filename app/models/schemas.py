@@ -71,6 +71,35 @@ class NormalizedPosition(BaseModel):
 
 # ==================== Device Schemas ====================
 
+# ── NEW class: AlertSchedule  (add before CustomRule) ───────
+class AlertSchedule(BaseModel):
+    """Active-window schedule for an alert rule.
+
+    days      : list of weekday numbers, 0 = Monday … 6 = Sunday
+    hourStart : first active hour  (0-23, inclusive)
+    hourEnd   : last  active hour  (0-23, inclusive)
+    """
+    days:      List[int] = Field(default_factory=list)
+    hourStart: int       = Field(0,  ge=0, le=23)
+    hourEnd:   int       = Field(23, ge=0, le=23)
+
+
+# ── NEW class: AlertRow  (add after AlertSchedule) ──────────
+class AlertRow(BaseModel):
+    """One row from the frontend alert table.
+
+    Mirrors the JS alertRows objects so the full UI state —
+    including per-row schedule and channel selection — survives
+    the backend serialisation round-trip.
+    """
+    uid:      int
+    alertKey: str
+    value:    Optional[float]         = None   # threshold for system alerts
+    name:     Optional[str]           = None   # label for custom rules
+    rule:     Optional[str]           = None   # rule expression for custom rules
+    channels: List[str]               = Field(default_factory=list)
+    schedule: Optional[AlertSchedule] = None
+
 class CustomRule(BaseModel):
     """Definition for a custom alert rule"""
     name: str = Field(..., min_length=1)
@@ -80,22 +109,25 @@ class CustomRule(BaseModel):
 
 class DeviceConfig(BaseModel):
     """
-    Device configuration schema
-    ALL ALERT FIELDS ARE OPTIONAL AND DEFAULT TO None (DISABLED)
+    Device configuration schema.
+    ALL ALERT FIELDS ARE OPTIONAL AND DEFAULT TO None (DISABLED).
     """
-    # Alert thresholds - None means alert is DISABLED
-    offline_timeout_hours: Optional[int] = Field(None, ge=1, le=720)
-    speed_tolerance: Optional[float] = Field(None, ge=0)
-    speed_duration_seconds: Optional[int] = Field(30, ge=1)
-    idle_timeout_minutes: Optional[int] = Field(None, ge=1)
-    towing_threshold_meters: Optional[int] = Field(None, ge=10)
-    
-    # Mapping of standard alert keys to list of channel names
+    # Alert thresholds – None means the alert is DISABLED
+    offline_timeout_hours:   Optional[int]   = Field(None, ge=1, le=720)
+    speed_tolerance:         Optional[float] = Field(None, ge=0)
+    speed_duration_seconds:  Optional[int]   = Field(30,   ge=1)
+    idle_timeout_minutes:    Optional[int]   = Field(None, ge=1)
+    towing_threshold_meters: Optional[int]   = Field(None, ge=10)
+
+    # Mapping of standard alert keys → list of channel names
     alert_channels: Dict[str, List[str]] = Field(default_factory=dict)
-    
+
+    # Full alert-row list – persists per-row schedule & channel selection
+    alert_rows: List[AlertRow] = Field(default_factory=list)   # ← NEW
+
     custom_rules: List[Union[CustomRule, str]] = Field(default_factory=list)
-    
-    sensors: Dict[str, str] = Field(default_factory=dict)
+
+    sensors:     Dict[str, str] = Field(default_factory=dict)
     maintenance: Dict[str, int] = Field(default_factory=dict)
 
 

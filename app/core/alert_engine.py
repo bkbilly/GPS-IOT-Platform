@@ -28,6 +28,51 @@ class AlertEngine:
     def set_alert_callback(self, callback: Callable):
         self.alert_callback = callback
     
+    def _is_alert_active(self, alert_key: str, device, rule_name: str = None) -> bool:
+        """Return True if this alert should fire right now per its schedule.
+
+        For system alerts  : _is_alert_active('speed_tolerance', device)
+        For custom rules   : _is_alert_active('__custom__', device, rule_name='My Rule')
+
+        Schedule shape (set by the frontend):
+            { "days": [0,1,2,3,4], "hourStart": 8, "hourEnd": 17 }
+        Days follow ISO / Python weekday(): 0 = Monday, 6 = Sunday.
+        No schedule (or empty days list) means "always active".
+        """
+        alert_rows = device.config.get('alert_rows', [])
+
+        if alert_key == '__custom__' and rule_name:
+            row = next(
+                (r for r in alert_rows
+                 if isinstance(r, dict)
+                 and r.get('alertKey') == '__custom__'
+                 and r.get('name') == rule_name),
+                None,
+            )
+        else:
+            row = next(
+                (r for r in alert_rows
+                 if isinstance(r, dict) and r.get('alertKey') == alert_key),
+                None,
+            )
+
+        if not row:
+            return True  # no row → no restriction → always active
+
+        schedule = row.get('schedule')
+        if not schedule or not schedule.get('days'):
+            return True  # no schedule set → always active
+
+        now       = datetime.utcnow()
+        today_dow = now.weekday()   # Monday = 0, Sunday = 6
+        current_h = now.hour
+
+        if today_dow not in schedule['days']:
+            return False
+        if not (schedule.get('hourStart', 0) <= current_h <= schedule.get('hourEnd', 23)):
+            return False
+        return True
+
     async def process_position_alerts(self, position, device, state):
         try:
             users = device.users
@@ -105,6 +150,12 @@ class AlertEngine:
             await self._send_notification(user, device, alert_data)
 
     async def _check_towing(self, position, device, state):
+        # (keep your existing logic here; just add the schedule guard early)
+        threshold = device.config.get('towing_threshold_meters')
+        if threshold is None:
+            return None
+        if not self._is_alert_active('towing_threshold_meters', device):
+            return None
         threshold = device.config.get('towing_threshold_meters')
         if threshold is None: return None
         if position.ignition:
@@ -129,51 +180,58 @@ class AlertEngine:
 
     async def _check_speeding(self, position, device, state):
         limit = device.config.get('speed_tolerance')
-        # Allow custom duration, default to 30s
         duration_threshold = device.config.get('speed_duration_seconds', 30)
-        
-        # Reset tracking if below limit
-        if limit is None or (position.speed or 0) <= limit:
+
+        if limit is None or (position.speed or 0) <= limit or \
+                not self._is_alert_active('speed_tolerance', device):
             state.alert_states['speeding_since'] = None
             state.alert_states['speeding_alerted'] = False
             return None
 
-        # Already alerted for this continuous speeding event
         if state.alert_states.get('speeding_alerted'):
             return None
 
-        # Start tracking time when speed first crosses the limit
         since = state.alert_states.get('speeding_since')
         if not since:
             state.alert_states['speeding_since'] = position.device_time.isoformat()
             return None
 
-        # Only alert if speeding for more than configured seconds
         start = datetime.fromisoformat(since).replace(tzinfo=None)
         duration_seconds = (position.device_time.replace(tzinfo=None) - start).total_seconds()
-        
+
         if duration_seconds >= duration_threshold:
             state.alert_states['speeding_alerted'] = True
             return {
-                'type': AlertType.SPEEDING, 
-                'severity': Severity.WARNING, 
-                'message': f"Speeding: {position.speed:.1f} km/h (Limit: {limit}).", 
-                'alert_metadata': {'config_key': 'speed_tolerance'}
+                'type': AlertType.SPEEDING,
+                'severity': Severity.WARNING,
+                'message': f"Speeding: {position.speed:.1f} km/h (Limit: {limit}).",
+                'alert_metadata': {'config_key': 'speed_tolerance'},
             }
-        
         return None
 
     async def _check_idling(self, position, device, state):
         limit = device.config.get('idle_timeout_minutes')
-        if limit is None or not position.ignition or (position.speed or 0) > 1.5:
-            state.alert_states['idling_since'] = None; state.alert_states['idling_alerted'] = False; return None
+        if limit is None or not position.ignition or (position.speed or 0) > 1.5 or \
+                not self._is_alert_active('idle_timeout_minutes', device):
+            state.alert_states['idling_since'] = None
+            state.alert_states['idling_alerted'] = False
+            return None
+
         since = state.alert_states.get('idling_since')
-        if not since: state.alert_states['idling_since'] = position.device_time.isoformat(); return None
+        if not since:
+            state.alert_states['idling_since'] = position.device_time.isoformat()
+            return None
+
         start = datetime.fromisoformat(since).replace(tzinfo=None)
         if (position.device_time.replace(tzinfo=None) - start).total_seconds() / 60 >= limit:
             if not state.alert_states.get('idling_alerted'):
                 state.alert_states['idling_alerted'] = True
-                return {'type': AlertType.IDLING, 'severity': Severity.INFO, 'message': f"Idle Alert: Vehicle idling for {limit} min.", 'alert_metadata': {'config_key': 'idle_timeout_minutes'}}
+                return {
+                    'type': AlertType.IDLING,
+                    'severity': Severity.INFO,
+                    'message': f"Idle Alert: Vehicle idling for {limit} min.",
+                    'alert_metadata': {'config_key': 'idle_timeout_minutes'},
+                }
         return None
 
     async def _check_geofences(self, position, device, state):
@@ -196,18 +254,35 @@ class AlertEngine:
         ctx = {'speed': position.speed or 0, 'ignition': position.ignition, **position.sensors}
         for rule_obj in rules:
             try:
-                rule_str = rule_obj.get('rule') if isinstance(rule_obj, dict) else str(rule_obj)
-                rule_name = rule_obj.get('name', 'Custom') if isinstance(rule_obj, dict) else "Custom"
-                rule_ch = rule_obj.get('channels', []) if isinstance(rule_obj, dict) else []
-                if not rule_str: continue
-                if rule_str not in self.rule_cache: self.rule_cache[rule_str] = rule_engine.Rule(rule_str)
+                rule_str  = rule_obj.get('rule')  if isinstance(rule_obj, dict) else str(rule_obj)
+                rule_name = rule_obj.get('name', '') if isinstance(rule_obj, dict) else ''
+                rule_ch   = rule_obj.get('channels', []) if isinstance(rule_obj, dict) else []
+                if not rule_str:
+                    continue
+
+                # ── schedule gate ──────────────────────────────────────
+                if not self._is_alert_active('__custom__', device, rule_name=rule_name):
+                    state.alert_states[f"c_f_{re.sub(r'[^a-zA-Z]', '', rule_str)}"] = False
+                    continue
+                # ──────────────────────────────────────────────────────
+
+                if rule_str not in self.rule_cache:
+                    self.rule_cache[rule_str] = rule_engine.Rule(rule_str)
+
                 if self.rule_cache[rule_str].matches(ctx):
                     key = f"c_f_{re.sub(r'[^a-zA-Z]', '', rule_str)}"
                     if not state.alert_states.get(key):
-                        alerts.append({'type': AlertType.CUSTOM, 'severity': Severity.WARNING, 'message': f"Alert: {rule_name}", 'alert_metadata': {'selected_channels': rule_ch}})
+                        alerts.append({
+                            'type': AlertType.CUSTOM,
+                            'severity': Severity.WARNING,
+                            'message': f"Alert: {rule_name}",
+                            'alert_metadata': {'selected_channels': rule_ch},
+                        })
                         state.alert_states[key] = True
-                else: state.alert_states[f"c_f_{re.sub(r'[^a-zA-Z]', '', rule_str)}"] = False
-            except: pass
+                else:
+                    state.alert_states[f"c_f_{re.sub(r'[^a-zA-Z]', '', rule_str)}"] = False
+            except:
+                pass
         return alerts
 
     async def _send_notification(self, user: User, device: Device, alert_data: Dict[str, Any]):
