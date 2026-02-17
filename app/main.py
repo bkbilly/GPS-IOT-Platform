@@ -36,6 +36,7 @@ import uvicorn
 from sqlalchemy import select, insert, update, delete, and_
 from models import User, Device, user_device_association
 from alerts import ALERT_DEFINITIONS
+from alerts import ALERT_DEFINITIONS_PUBLIC
 
 
 
@@ -456,27 +457,46 @@ async def get_device_trips(device_id: int, start_date: Optional[datetime] = Quer
     trips = await db.get_device_trips(device_id, start_date, end_date)
     return trips
 
+@app.get("/api/geofences")
+async def get_geofences(device_id: Optional[int] = Query(None)):
+    """Get all geofences, optionally filtered to a specific device."""
+    db = get_db()
+    geofences = await db.get_geofences(device_id)
+    return geofences
+
 @app.post("/api/geofences", response_model=GeofenceResponse)
 async def create_geofence(geofence: GeofenceCreate):
     db = get_db()
     return await db.create_geofence(geofence.model_dump())
 
 @app.get("/api/alerts/types")
+@app.get("/api/alerts/types")
 async def get_alert_types():
     """Returns all registered alert type definitions for the frontend."""
-    return {
-        key: {
-            "label":    d.label,
-            "desc":     d.description,
-            "unit":     d.unit,
-            "default":  d.default_value,
-            "min":      d.min_value,
-            "max":      d.max_value,
-            "icon":     d.icon,
-            "severity": d.severity,
+    result = {}
+    for key, d in ALERT_DEFINITIONS_PUBLIC.items():
+        result[key] = {
+            "label":       d.label,
+            "desc":        d.description,
+            "icon":        d.icon,
+            "severity":    d.severity.value if hasattr(d.severity, 'value') else d.severity,
+            "fields":      [
+                {
+                    "key":        f.key,
+                    "label":      f.label,
+                    "field_type": f.field_type,
+                    "default":    f.default,
+                    "unit":       f.unit,
+                    "min_value":  f.min_value,
+                    "max_value":  f.max_value,
+                    "options":    f.options,
+                    "required":   f.required,
+                    "help_text":  f.help_text,
+                }
+                for f in d.fields
+            ],
         }
-        for key, d in ALERT_DEFINITIONS.items()
-    }
+    return result
 
 @app.get("/api/alerts", response_model=List[AlertResponse])
 async def get_alerts(user_id: int = Query(...), unread_only: bool = Query(False)):

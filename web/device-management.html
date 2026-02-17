@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="css/device-management.css">
 </head>
 <body>
+
 <div class="container">
     <div class="header">
         <div class="header-title">
@@ -100,6 +101,8 @@
                                 <label class="form-label">Protocol</label>
                                 <select class="form-input" id="deviceProtocol"></select>
                             </div>
+                        </div>
+                        <div class="form-column">
                             <div class="form-row">
                                 <div class="form-group">
                                     <label class="form-label">Vehicle Type</label>
@@ -128,21 +131,12 @@
                                 <label class="form-label">VIN</label>
                                 <input type="text" class="form-input" id="vin" placeholder="17-character VIN">
                             </div>
-                        </div>
-                        <div class="form-column">
                             <div class="form-group">
                                 <label class="form-label">
                                     Current Odometer (km)
                                     <span style="font-size:0.8rem;color:var(--text-muted);font-weight:normal;display:block;margin-top:0.25rem;">Adjust only if resetting or correcting</span>
                                 </label>
                                 <input type="number" id="currentOdometer" class="form-input" placeholder="0" step="0.1" min="0">
-                            </div>
-                            <div class="config-section">
-                                <h3 class="config-title">Maintenance</h3>
-                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
-                                    <div class="form-group"><label class="form-label">Oil change (km)</label><input type="number" class="form-input" id="oilChangeKm"></div>
-                                    <div class="form-group"><label class="form-label">Tire rotation (km)</label><input type="number" class="form-input" id="tireRotationKm"></div>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -182,7 +176,7 @@
                                 <tr>
                                     <th style="width:34px;">#</th>
                                     <th style="width:190px;">Alert Type</th>
-                                    <th style="width:140px;">Threshold</th>
+                                    <th>Threshold</th>
                                     <th>Notify Via</th>
                                     <th style="width:160px;">Schedule</th>
                                     <th style="width:84px;text-align:center;">Actions</th>
@@ -201,7 +195,12 @@
                 <div class="modal-tab-content" id="tab-rawdata">
                     <div style="overflow-x:auto;">
                         <table class="raw-data-table">
-                            <thead><tr><th>Time</th><th>Lat</th><th>Lon</th><th>Speed</th><th>Heading</th><th>Sat</th><th>Alt</th><th>Ign</th><th>Attributes</th></tr></thead>
+                            <thead>
+                                <tr>
+                                    <th>Time</th><th>Lat</th><th>Lon</th><th>Speed</th>
+                                    <th>Heading</th><th>Sat</th><th>Alt</th><th>Ign</th><th>Attributes</th>
+                                </tr>
+                            </thead>
                             <tbody id="rawDataBody"></tbody>
                         </table>
                     </div>
@@ -234,12 +233,12 @@
      ALERT EDITOR MODAL
 ============================================================= -->
 <div class="modal" id="alertEditorModal">
-    <div class="modal-content" style="max-width:660px;">
+    <div class="modal-content">
         <div class="modal-header">
             <h2 class="modal-title" id="alertEditorTitle">Edit Alert</h2>
             <button type="button" class="modal-close" onclick="closeAlertEditor()">&#10005;</button>
         </div>
-        <div id="alertEditorBody" style="padding:1.5rem 2rem;overflow-y:auto;max-height:calc(90vh - 180px);"></div>
+        <div id="alertEditorBody"></div>
         <div class="modal-footer">
             <button type="button" class="btn btn-secondary" onclick="closeAlertEditor()">Cancel</button>
             <button type="button" class="btn btn-primary" onclick="saveAlertFromEditor()">Save Alert</button>
@@ -248,7 +247,7 @@
 </div>
 
 <!-- =============================================================
-     COMMANDS MODAL  (separate modal, full original structure)
+     COMMANDS MODAL
 ============================================================= -->
 <div class="modal" id="commandModal">
     <div class="modal-content wide">
@@ -257,97 +256,100 @@
             <button type="button" class="modal-close" onclick="closeCommandModal()">&#10005;</button>
         </div>
 
-        <div class="command-tabs">
-            <button class="command-tab active" onclick="switchCommandTab('send')">&#128228; Send Command</button>
-            <button class="command-tab" onclick="switchCommandTab('history')">&#128220; History</button>
-        </div>
-
-        <!-- Send Command Tab -->
-        <div class="command-tab-content active" id="sendCommandTab">
-            <div class="command-subtabs">
-                <button class="command-subtab active" onclick="switchCommandSubtab('predefined')">Predefined Commands</button>
-                <button class="command-subtab" onclick="switchCommandSubtab('custom')">Custom Command</button>
+        <div class="modal-scrollable">
+            <div class="command-tabs">
+                <button class="command-tab active" onclick="switchCommandTab('send')">&#128228; Send Command</button>
+                <button class="command-tab" onclick="switchCommandTab('history')">&#128220; History</button>
             </div>
 
-            <!-- Predefined Commands -->
-            <div class="command-subtab-content active" id="predefinedCommandContent">
-                <div class="form-group">
-                    <label class="form-label">Select Command</label>
-                    <select class="form-select" id="commandTypeSelect" onchange="onCommandSelect()">
-                        <option value="">-- Select a command --</option>
-                    </select>
+            <!-- Send Command Tab -->
+            <div class="command-tab-content active" id="sendCommandTab">
+                <div class="command-subtabs">
+                    <button class="command-subtab active" onclick="switchCommandSubtab('predefined')">Predefined Commands</button>
+                    <button class="command-subtab" onclick="switchCommandSubtab('custom')">Custom Command</button>
                 </div>
 
-                <div id="commandInfoBox" class="command-info-box" style="display:none;">
-                    <div class="command-info-label">Description:</div>
-                    <div id="commandDescription"></div>
-                    <div class="command-info-label" style="margin-top:0.75rem;">Example:</div>
-                    <div id="commandExample" style="font-family:var(--font-mono);background:var(--bg-tertiary);padding:0.5rem;border-radius:6px;margin-top:0.25rem;"></div>
+                <!-- Predefined Commands -->
+                <div class="command-subtab-content active" id="predefinedCommandContent">
+                    <div class="form-group">
+                        <label class="form-label">Select Command</label>
+                        <select class="form-select" id="commandTypeSelect" onchange="onCommandSelect()">
+                            <option value="">-- Select a command --</option>
+                        </select>
+                    </div>
+
+                    <div id="commandInfoBox" class="command-info-box" style="display:none;">
+                        <div class="command-info-label">Description:</div>
+                        <div id="commandDescription"></div>
+                        <div class="command-info-label" style="margin-top:0.75rem;">Example:</div>
+                        <div id="commandExample" style="font-family:var(--font-mono);background:var(--bg-tertiary);padding:0.5rem;border-radius:6px;margin-top:0.25rem;"></div>
+                    </div>
+
+                    <div id="commandParamsBox" class="form-group" style="display:none;">
+                        <label class="form-label">Parameters</label>
+                        <input type="text" class="form-input" id="commandParams" placeholder="Enter parameters here">
+                        <div style="font-size:0.8125rem;color:var(--text-muted);margin-top:0.5rem;">Parameters will be appended after the command with a space</div>
+                    </div>
+
+                    <div id="commandPreviewBox" class="command-preview-box" style="display:none;">
+                        <div class="command-preview-label">Data to be sent:</div>
+                        <div id="commandPreviewHex" class="command-preview-hex"></div>
+                        <div id="commandPreviewAscii" class="command-preview-ascii"></div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="previewCommand()">&#128269; Preview</button>
+                        <button type="button" class="btn btn-primary" onclick="sendCommand()" id="sendCommandBtn">&#128228; Send Command</button>
+                    </div>
                 </div>
 
-                <div id="commandParamsBox" class="form-group" style="display:none;">
-                    <label class="form-label">Parameters</label>
-                    <input type="text" class="form-input" id="commandParams" placeholder="Enter parameters here">
-                    <div style="font-size:0.8125rem;color:var(--text-muted);margin-top:0.5rem;">Parameters will be appended after the command with a space</div>
-                </div>
+                <!-- Custom Command -->
+                <div class="command-subtab-content" id="customCommandContent">
+                    <div class="form-group">
+                        <label class="form-label">Custom Command</label>
+                        <textarea class="form-textarea" id="customCommandInput" placeholder="Enter raw command text or hex string" rows="3"></textarea>
+                        <div style="font-size:0.875rem;color:var(--text-muted);margin-top:0.5rem;">Enter plain text or hex string (will be automatically converted to bytes)</div>
+                    </div>
 
-                <div id="commandPreviewBox" class="command-preview-box" style="display:none;">
-                    <div class="command-preview-label">Data to be sent:</div>
-                    <div id="commandPreviewHex" class="command-preview-hex"></div>
-                    <div id="commandPreviewAscii" class="command-preview-ascii"></div>
-                </div>
+                    <div id="customCommandPreviewBox" class="command-preview-box" style="display:none;">
+                        <div class="command-preview-label">Data to be sent:</div>
+                        <div id="customCommandPreviewHex" class="command-preview-hex"></div>
+                        <div id="customCommandPreviewAscii" class="command-preview-ascii"></div>
+                    </div>
 
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="previewCommand()">&#128269; Preview</button>
-                    <button type="button" class="btn btn-primary" onclick="sendCommand()" id="sendCommandBtn">&#128228; Send Command</button>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="previewCustomCommand()">&#128269; Preview</button>
+                        <button type="button" class="btn btn-primary" onclick="sendCustomCommand()" id="sendCustomCommandBtn">&#128228; Send Custom Command</button>
+                    </div>
                 </div>
             </div>
 
-            <!-- Custom Command -->
-            <div class="command-subtab-content" id="customCommandContent">
-                <div class="form-group">
-                    <label class="form-label">Custom Command</label>
-                    <textarea class="form-textarea" id="customCommandInput" placeholder="Enter raw command text or hex string" rows="3"></textarea>
-                    <div style="font-size:0.875rem;color:var(--text-muted);margin-top:0.5rem;">Enter plain text or hex string (will be automatically converted to bytes)</div>
+            <!-- History Tab -->
+            <div class="command-tab-content" id="historyCommandTab">
+                <div style="margin-bottom:1rem;">
+                    <button class="btn btn-secondary" onclick="refreshCommandHistory()">&#128260; Refresh</button>
                 </div>
-
-                <div id="customCommandPreviewBox" class="command-preview-box" style="display:none;">
-                    <div class="command-preview-label">Data to be sent:</div>
-                    <div id="customCommandPreviewHex" class="command-preview-hex"></div>
-                    <div id="customCommandPreviewAscii" class="command-preview-ascii"></div>
+                <div style="overflow-x:auto;">
+                    <table class="command-history-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Command</th>
+                                <th>Payload</th>
+                                <th>Status</th>
+                                <th>Response</th>
+                            </tr>
+                        </thead>
+                        <tbody id="commandHistoryBody"></tbody>
+                    </table>
                 </div>
-
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="previewCustomCommand()">&#128269; Preview</button>
-                    <button type="button" class="btn btn-primary" onclick="sendCustomCommand()" id="sendCustomCommandBtn">&#128228; Send Custom Command</button>
+                <div id="commandHistoryEmpty" style="display:none;text-align:center;padding:3rem;color:var(--text-muted);">
+                    <div style="font-size:3rem;margin-bottom:1rem;">&#128237;</div>
+                    <div>No command history available</div>
                 </div>
             </div>
-        </div>
+        </div><!-- /.modal-scrollable -->
 
-        <!-- History Tab -->
-        <div class="command-tab-content" id="historyCommandTab">
-            <div style="margin-bottom:1rem;">
-                <button class="btn btn-secondary" onclick="refreshCommandHistory()">&#128260; Refresh</button>
-            </div>
-            <div style="overflow-x:auto;">
-                <table class="command-history-table">
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            <th>Command</th>
-                            <th>Payload</th>
-                            <th>Status</th>
-                            <th>Response</th>
-                        </tr>
-                    </thead>
-                    <tbody id="commandHistoryBody"></tbody>
-                </table>
-            </div>
-            <div id="commandHistoryEmpty" style="display:none;text-align:center;padding:3rem;color:var(--text-muted);">
-                <div style="font-size:3rem;margin-bottom:1rem;">&#128237;</div>
-                <div>No command history available</div>
-            </div>
-        </div>
     </div>
 </div>
 

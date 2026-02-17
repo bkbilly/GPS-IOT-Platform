@@ -75,25 +75,57 @@ class AlertEngine:
             return False
         return True
 
-    async def process_position_alerts(self, position, device, state):
+async def process_position_alerts(self, position, device, state):
+    try:
+        users = device.users
+        if not users:
+            return
+
         if state.alert_states is None:
             state.alert_states = {}
 
+        from alerts import ALERT_REGISTRY
+
         alerts = []
-        for key, alert_cls in ALERT_REGISTRY.items():
-            if not self._is_alert_active(key, device):
+        alert_rows = device.config.get("alert_rows", [])
+
+        for row in alert_rows:
+            if not isinstance(row, dict):
                 continue
-            results = await alert_cls().check_many(position, device, state)
+
+            alert_key = row.get("alertKey")
+            if not alert_key or alert_key == "__custom__":
+                continue
+
+            alert_cls = ALERT_REGISTRY.get(alert_key)
+            if not alert_cls:
+                continue
+
+            # Schedule check (unchanged from before)
+            if not self._is_alert_active(alert_key, device):
+                continue
+
+            # Params dict (new — replaces single `value` field)
+            params = row.get("params", {})
+
+            results = await alert_cls().check_many(position, device, state, params)
             alerts.extend(results)
 
+        # Custom rules (unchanged)
+        custom_alerts = await self._check_custom_rules(position, device, state)
+        alerts.extend(custom_alerts)
 
-        # custom rules still handled separately
-        alerts.extend(await self._check_custom_rules(position, device, state))
+        if state.alert_states is not None:
+            db = get_db()
+            await db.update_device_alert_state(device.id, state.alert_states)
 
         for alert_data in alerts:
-            alert_data.setdefault("latitude", position.latitude)
+            alert_data.setdefault("latitude",  position.latitude)
             alert_data.setdefault("longitude", position.longitude)
-            await self._dispatch_alert(device.users, device, alert_data)
+            await self._dispatch_alert(users, device, alert_data)
+
+    except Exception as e:
+        logger.error(f"Alert processing error: {e}")
 
     async def _dispatch_alert(self, users: List[User], device: Device, alert_data: Dict[str, Any]):
         """
@@ -123,105 +155,6 @@ class AlertEngine:
                 
             # 3. External notifications (Email, Telegram, etc. per user)
             await self._send_notification(user, device, alert_data)
-
-    async def _check_towing(self, position, device, state):
-        # (keep your existing logic here; just add the schedule guard early)
-        threshold = device.config.get('towing_threshold_meters')
-        if threshold is None:
-            return None
-        if not self._is_alert_active('towing_threshold_meters', device):
-            return None
-        threshold = device.config.get('towing_threshold_meters')
-        if threshold is None: return None
-        if position.ignition:
-            state.alert_states.pop('towing_anchor_lat', None)
-            state.alert_states.pop('towing_anchor_lon', None)
-            state.alert_states['towing_alerted'] = False
-            return None
-        anchor_lat = state.alert_states.get('towing_anchor_lat')
-        anchor_lon = state.alert_states.get('towing_anchor_lon')
-        if anchor_lat is None:
-            state.alert_states['towing_anchor_lat'] = position.latitude
-            state.alert_states['towing_anchor_lon'] = position.longitude
-            return None
-        db = get_db()
-        async with db.get_session() as session:
-            dist = await db._calculate_distance(session, anchor_lat, anchor_lon, position.latitude, position.longitude) * 1000 
-        if dist > threshold:
-            if not state.alert_states.get('towing_alerted'):
-                state.alert_states['towing_alerted'] = True
-                return {'type': AlertType.TOWING, 'severity': Severity.CRITICAL, 'message': f"Towing Alert: Vehicle moved {int(dist)}m while parked.", 'alert_metadata': {'config_key': 'towing_threshold_meters'}}
-        return None
-
-    async def _check_speeding(self, position, device, state):
-        limit = device.config.get('speed_tolerance')
-        duration_threshold = device.config.get('speed_duration_seconds', 30)
-
-        if limit is None or (position.speed or 0) <= limit or \
-                not self._is_alert_active('speed_tolerance', device):
-            state.alert_states['speeding_since'] = None
-            state.alert_states['speeding_alerted'] = False
-            return None
-
-        if state.alert_states.get('speeding_alerted'):
-            return None
-
-        since = state.alert_states.get('speeding_since')
-        if not since:
-            state.alert_states['speeding_since'] = position.device_time.isoformat()
-            return None
-
-        start = datetime.fromisoformat(since).replace(tzinfo=None)
-        duration_seconds = (position.device_time.replace(tzinfo=None) - start).total_seconds()
-
-        if duration_seconds >= duration_threshold:
-            state.alert_states['speeding_alerted'] = True
-            return {
-                'type': AlertType.SPEEDING,
-                'severity': Severity.WARNING,
-                'message': f"Speeding: {position.speed:.1f} km/h (Limit: {limit}).",
-                'alert_metadata': {'config_key': 'speed_tolerance'},
-            }
-        return None
-
-    async def _check_idling(self, position, device, state):
-        limit = device.config.get('idle_timeout_minutes')
-        if limit is None or not position.ignition or (position.speed or 0) > 1.5 or \
-                not self._is_alert_active('idle_timeout_minutes', device):
-            state.alert_states['idling_since'] = None
-            state.alert_states['idling_alerted'] = False
-            return None
-
-        since = state.alert_states.get('idling_since')
-        if not since:
-            state.alert_states['idling_since'] = position.device_time.isoformat()
-            return None
-
-        start = datetime.fromisoformat(since).replace(tzinfo=None)
-        if (position.device_time.replace(tzinfo=None) - start).total_seconds() / 60 >= limit:
-            if not state.alert_states.get('idling_alerted'):
-                state.alert_states['idling_alerted'] = True
-                return {
-                    'type': AlertType.IDLING,
-                    'severity': Severity.INFO,
-                    'message': f"Idle Alert: Vehicle idling for {limit} min.",
-                    'alert_metadata': {'config_key': 'idle_timeout_minutes'},
-                }
-        return None
-
-    async def _check_geofences(self, position, device, state):
-        db = get_db(); violations = await db.check_geofence_violations(device.id, position.latitude, position.longitude)
-        return [{'type': AlertType.GEOFENCE_ENTER if v['type'] == 'enter' else AlertType.GEOFENCE_EXIT, 'severity': Severity.WARNING, 'message': f"Geofence: {v['geofence_name']}", 'alert_metadata': {}} for v in violations]
-
-    async def _check_maintenance(self, device, state):
-        oil_km = device.config.get('maintenance', {}).get('oil_change_km')
-        if oil_km:
-            rem = oil_km - (state.total_odometer % oil_km)
-            if 0 < rem <= 100 and not state.alert_states.get('maint_oil_alerted'):
-                state.alert_states['maint_oil_alerted'] = True
-                return {'type': AlertType.MAINTENANCE, 'severity': Severity.INFO, 'message': f"Maintenance: Oil due in {int(rem)} km."}
-            elif rem > 100: state.alert_states['maint_oil_alerted'] = False
-        return None
 
     async def _check_custom_rules(self, position, device, state):
         rules = device.config.get('custom_rules', [])

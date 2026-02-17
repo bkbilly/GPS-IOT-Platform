@@ -1,48 +1,93 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Any
 
+
+# ── Field Types ────────────────────────────────────────────────────────────────
+
+@dataclass
+class AlertField:
+    """
+    Declares one configurable parameter for an alert.
+
+    The frontend renders each field automatically based on `field_type`:
+      - "number"      → numeric input with min/max/unit
+      - "select"      → <select> dropdown; provide `options` as list of {value, label}
+      - "multiselect" → checkboxes; provide `options`
+      - "checkbox"    → single boolean toggle
+
+    `key`     is how the value is stored in AlertRow.params and read by the module.
+    `default` is the value pre-filled when the alert is first added.
+    """
+    key:        str
+    label:      str
+    field_type: str   = "number"          # "number" | "select" | "multiselect" | "checkbox"
+    default:    Any   = None
+    unit:       str   = ""
+    min_value:  float = 0
+    max_value:  float = 9999
+    options:    list  = field(default_factory=list)   # [{value, label}, ...]
+    required:   bool  = True
+    help_text:  str   = ""
+
+
+# ── Alert Definition ───────────────────────────────────────────────────────────
 
 @dataclass
 class AlertDefinition:
-    """Everything the frontend and backend need to know about this alert type."""
+    """
+    Everything the frontend and backend need to know about an alert type.
+
+    `fields` is a list of AlertField objects. The first field is the "primary"
+    threshold shown in the alerts table summary column; additional fields appear
+    only in the editor modal.
+    """
 
     # --- Identity ---
-    key: str                        # config key, e.g. "speed_tolerance"
-    alert_type: object              # AlertType enum value
+    key:        str           # unique config key, e.g. "speed_tolerance"
+    alert_type: object        # AlertType enum value
 
     # --- Frontend UI ---
-    label: str                      # "Speed Limit Alert"
-    description: str                # shown in tooltip/help text
-    unit: str                       # "km/h", "minutes", etc.
-    default_value: float            # default threshold value
-    min_value: float = 0
-    max_value: float = 9999
-    icon: str = "🔔"
+    label:       str
+    description: str
+    icon:        str   = "🔔"
 
-    # --- Severity / DB ---
-    severity: object = "warning"    # Severity enum value
+    # --- Fields ---
+    fields: list = field(default_factory=list)   # List[AlertField]
 
-    # --- State keys this alert uses in alert_states ---
+    # --- Severity ---
+    severity: object = "warning"   # Severity enum value
+
+    # --- State keys this module uses in alert_states ---
     state_keys: list = field(default_factory=list)
 
-    # --- If True, this alert is NOT shown in the frontend "Add Alert" dropdown.
-    #     Use for alerts managed outside the threshold system (geofences, maintenance). ---
+    # --- If True, hidden from the "Add System Alert" dropdown ---
     hidden: bool = False
 
+    @property
+    def primary_field(self) -> Optional[AlertField]:
+        """The first field — shown as the threshold badge in the table."""
+        return self.fields[0] if self.fields else None
+
+    def default_params(self) -> dict:
+        """Returns {key: default} for all fields — used when adding the alert."""
+        return {f.key: f.default for f in self.fields}
+
+
+# ── Base Alert Class ───────────────────────────────────────────────────────────
 
 class BaseAlert(ABC):
     """
     Base class for all alert modules.
 
-    The engine will:
-      1. Call definition() to get UI/DB metadata.
-      2. Check the alert schedule via _is_alert_active() — modules do NOT do this.
-      3. Call check() for single-result alerts.
-      4. Call check_many() for alerts that can return multiple results (e.g. geofences).
+    The engine:
+      1. Calls definition() to get metadata.
+      2. Handles schedule checking — modules do NOT call _is_alert_active().
+      3. Calls check_many(), which by default delegates to check().
 
-    Subclasses must implement check(). Override check_many() only when a single
-    position evaluation can produce more than one alert event.
+    Subclasses MUST implement check().
+    Override check_many() only when a single position can produce multiple alerts
+    (e.g. multiple geofence violations simultaneously).
     """
 
     @classmethod
@@ -52,21 +97,19 @@ class BaseAlert(ABC):
         ...
 
     @abstractmethod
-    async def check(self, position, device, state) -> Optional[dict]:
+    async def check(self, position, device, state, params: dict) -> Optional[dict]:
         """
-        Evaluate the alert condition for a single incoming position.
+        Evaluate the alert condition.
 
-        Returns an alert_data dict if the alert should fire, None otherwise.
-        Schedule-active checking is already done by the engine before this is called.
+        `params` — the AlertRow.params dict for this specific row, containing
+        the per-row configured values (e.g. {"speed_limit": 90, "duration_seconds": 30}).
+
+        Returns an alert_data dict to fire the alert, or None.
+        Schedule checking is already handled by the engine before this is called.
         """
         ...
 
-    async def check_many(self, position, device, state) -> list:
-        """
-        Override this for alerts that can produce multiple events per position
-        (e.g. multiple geofence violations at once).
-
-        The default implementation delegates to check() and wraps the result.
-        """
-        result = await self.check(position, device, state)
+    async def check_many(self, position, device, state, params: dict) -> list:
+        """Override for alerts that can return multiple events per position."""
+        result = await self.check(position, device, state, params)
         return [result] if result else []

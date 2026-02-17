@@ -86,15 +86,15 @@ class AlertSchedule(BaseModel):
 
 # ── NEW class: AlertRow  (add after AlertSchedule) ──────────
 class AlertRow(BaseModel):
-    """One row from the frontend alert table.
+    """
+    One row from the frontend alert table.
 
-    Mirrors the JS alertRows objects so the full UI state —
-    including per-row schedule and channel selection — survives
-    the backend serialisation round-trip.
+    `params` holds all per-row configuration values as a flat dict.
+    Each alert module declares which keys it expects via AlertField.
     """
     uid:      int
     alertKey: str
-    value:    Optional[float]         = None   # threshold for system alerts
+    params:   Dict[str, Any]          = Field(default_factory=dict)
     name:     Optional[str]           = None   # label for custom rules
     rule:     Optional[str]           = None   # rule expression for custom rules
     channels: List[str]               = Field(default_factory=list)

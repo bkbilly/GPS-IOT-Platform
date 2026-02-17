@@ -198,6 +198,18 @@ function switchModalTab(tabId, btn) {
     if (tabId === 'rawdata' && editingDeviceId) loadRawDataForModal(editingDeviceId);
 }
 
+async function loadGeofencesForDevice(deviceId) {
+    try {
+        const res = await fetch(`${API_BASE}/geofences?device_id=${deviceId}`);
+        if (!res.ok) return [];
+        const geofences = await res.json();
+        return geofences.map(g => ({ value: String(g.id), label: g.name }));
+    } catch (e) {
+        console.error('Failed to load geofences:', e);
+        return [];
+    }
+}
+
 // ── Open / Close Device Modal ─────────────────────────────────────
 
 function openAddDeviceModal() {
@@ -233,8 +245,6 @@ function openDeviceModal(deviceId, startTab = 'general') {
     document.getElementById('currentOdometer').value = d.state?.total_odometer != null ? d.state.total_odometer.toFixed(1) : '0.0';
 
     const config = d.config || {};
-    document.getElementById('oilChangeKm').value    = config.maintenance?.oil_change_km  || 10000;
-    document.getElementById('tireRotationKm').value = config.maintenance?.tire_rotation_km || 8000;
 
     loadAlertsFromConfig(config);
     switchModalTab(startTab);
@@ -310,7 +320,12 @@ function addSelectedAlert() {
     if (!val) return;
     const def = ALERT_TYPES[val];
     if (!def) return;
-    alertRows.push({ uid:nextUid(), alertKey:val, value:def.default, channels:[], schedule:null });
+
+    // Build default params from field definitions
+    const params = {};
+    (def.fields || []).forEach(f => { params[f.key] = f.default; });
+
+    alertRows.push({ uid: nextUid(), alertKey: val, params, channels: [], schedule: null });
     renderAlertsTable();
     sel.value = '';
 }
@@ -341,32 +356,61 @@ function renderAlertsTable() {
     alertRows.forEach((row, idx) => {
         const isCustom = row.alertKey === '__custom__';
         const def      = isCustom ? null : ALERT_TYPES[row.alertKey];
-        const label    = isCustom ? `⚡ ${row.name}` : def?.label || row.alertKey;
-        const thresh   = isCustom
-            ? `<span style="font-family:var(--font-mono);font-size:0.73rem;color:var(--text-muted);word-break:break-all;">${row.rule}</span>`
-            : `<span class="alert-threshold-badge">${row.value} <small>${def?.unit||''}</small></span>`;
+        const label    = isCustom
+            ? `⚡ ${row.name}`
+            : (def?.icon ? `${def.icon} ${def.label}` : def?.label) || row.alertKey;
+
+        // Threshold column: all fields except checkboxes
+        let thresh;
+        if (isCustom) {
+            thresh = `<span style="font-family:var(--font-mono);font-size:0.73rem;color:var(--text-muted);word-break:break-all;">${row.rule}</span>`;
+        } else {
+            const visibleFields = (def?.fields || []).filter(f => f.field_type !== 'checkbox');
+            if (visibleFields.length) {
+                thresh = visibleFields.map(f => {
+                    const val = row.params?.[f.key];
+                    if (val == null || val === '') return null;
+
+                    // For select fields, show the option label instead of the raw value
+                    let display = val;
+                    if (f.field_type === 'select' && f.options?.length) {
+                        const opt = f.options.find(o => String(o.value) === String(val));
+                        if (opt) display = opt.label;
+                    }
+
+                    return `<span class="alert-threshold-badge">
+                        <small style="color:var(--text-muted);margin-right:0.2rem;">${f.label}:</small>
+                        ${display}
+                        ${f.unit ? `<small>${f.unit}</small>` : ''}
+                    </span>`;
+                }).filter(Boolean).join(' ');
+            }
+            if (!thresh) thresh = `<span style="color:var(--text-muted);font-size:0.8rem;">—</span>`;
+        }
+
         const chHtml = row.channels?.length
             ? row.channels.map(c => `<span class="channel-pill active" style="pointer-events:none;">${c}</span>`).join('')
             : `<span style="color:var(--text-muted);font-size:0.8rem;">None</span>`;
+
         const sched = row.schedule;
         let schedHtml = `<span style="color:var(--text-muted);font-size:0.8rem;">Always</span>`;
         if (sched?.days?.length) {
             const daysStr = sched.days.map(d => DAYS[d]).join(', ');
-            schedHtml = `<span class="schedule-badge">${daysStr}<br><small>${pad(sched.hourStart??0)}:00–${pad(sched.hourEnd??23)}:59</small></span>`;
+            schedHtml = `<span class="schedule-badge">${daysStr}<br><small>${pad(sched.hourStart ?? 0)}:00–${pad(sched.hourEnd ?? 23)}:59</small></span>`;
         }
 
         const tr = document.createElement('tr');
-        tr.className  = 'alert-data-row';
+        tr.className   = 'alert-data-row';
         tr.dataset.uid = row.uid;
-        tr.innerHTML = `
-            <td style="color:var(--text-muted);font-size:0.82rem;">${idx+1}</td>
-            <td><span class="alert-type-label ${isCustom?'custom':'system'}">${label}</span></td>
-            <td>${thresh}</td>
+        tr.innerHTML   = `
+            <td style="color:var(--text-muted);font-size:0.82rem;">${idx + 1}</td>
+            <td><span class="alert-type-label ${isCustom ? 'custom' : 'system'}">${label}</span></td>
+            <td><div style="display:flex;flex-wrap:wrap;gap:0.3rem;">${thresh}</div></td>
             <td><div style="display:flex;flex-wrap:wrap;gap:0.3rem;">${chHtml}</div></td>
             <td>${schedHtml}</td>
             <td style="text-align:center;white-space:nowrap;">
                 <button type="button" class="btn btn-secondary tbl-btn" onclick="openAlertEditor(${row.uid})">✏️</button>
-                <button type="button" class="btn btn-danger tbl-btn" onclick="removeAlertRow(${row.uid})">&#10005;</button>
+                <button type="button" class="btn btn-danger tbl-btn"    onclick="removeAlertRow(${row.uid})">✕</button>
             </td>`;
         tbody.appendChild(tr);
     });
@@ -374,16 +418,173 @@ function renderAlertsTable() {
 
 // ── Alert Editor ──────────────────────────────────────────────────
 
-function openAlertEditor(uid) {
+function renderAlertsTable() {
+    const tbody    = document.getElementById('alertsTableBody');
+    const emptyRow = document.getElementById('alertsEmptyRow');
+    if (!tbody) return;
+    tbody.querySelectorAll('tr.alert-data-row').forEach(r => r.remove());
+    if (!alertRows.length) { emptyRow.style.display = ''; return; }
+    emptyRow.style.display = 'none';
+
+    alertRows.forEach((row, idx) => {
+        const isCustom = row.alertKey === '__custom__';
+        const def      = isCustom ? null : ALERT_TYPES[row.alertKey];
+        const label    = isCustom
+            ? `⚡ ${row.name}`
+            : (def?.icon ? `${def.icon} ${def.label}` : def?.label) || row.alertKey;
+
+        // Threshold column: all fields except checkboxes
+        let thresh;
+        if (isCustom) {
+            thresh = `<span style="font-family:var(--font-mono);font-size:0.73rem;color:var(--text-muted);word-break:break-all;">${row.rule}</span>`;
+        } else {
+            const visibleFields = (def?.fields || []).filter(f => f.field_type !== 'checkbox');
+            if (visibleFields.length) {
+                thresh = visibleFields.map(f => {
+                    const val = row.params?.[f.key];
+                    if (val == null || val === '') return null;
+
+                    // For select fields, show the option label instead of the raw value
+                    let display = val;
+                    if (f.field_type === 'select' && f.options?.length) {
+                        const opt = f.options.find(o => String(o.value) === String(val));
+                        if (opt) display = opt.label;
+                    }
+
+                    return `<span class="alert-threshold-badge">
+                        <small style="color:var(--text-muted);margin-right:0.2rem;">${f.label}:</small>
+                        ${display}
+                        ${f.unit ? `<small>${f.unit}</small>` : ''}
+                    </span>`;
+                }).filter(Boolean).join(' ');
+            }
+            if (!thresh) thresh = `<span style="color:var(--text-muted);font-size:0.8rem;">—</span>`;
+        }
+
+        const chHtml = row.channels?.length
+            ? row.channels.map(c => `<span class="channel-pill active" style="pointer-events:none;">${c}</span>`).join('')
+            : `<span style="color:var(--text-muted);font-size:0.8rem;">None</span>`;
+
+        const sched = row.schedule;
+        let schedHtml = `<span style="color:var(--text-muted);font-size:0.8rem;">Always</span>`;
+        if (sched?.days?.length) {
+            const daysStr = sched.days.map(d => DAYS[d]).join(', ');
+            schedHtml = `<span class="schedule-badge">${daysStr}<br><small>${pad(sched.hourStart ?? 0)}:00–${pad(sched.hourEnd ?? 23)}:59</small></span>`;
+        }
+
+        const tr = document.createElement('tr');
+        tr.className   = 'alert-data-row';
+        tr.dataset.uid = row.uid;
+        tr.innerHTML   = `
+            <td style="color:var(--text-muted);font-size:0.82rem;">${idx + 1}</td>
+            <td><span class="alert-type-label ${isCustom ? 'custom' : 'system'}">${label}</span></td>
+            <td><div style="display:flex;flex-wrap:wrap;gap:0.3rem;">${thresh}</div></td>
+            <td><div style="display:flex;flex-wrap:wrap;gap:0.3rem;">${chHtml}</div></td>
+            <td>${schedHtml}</td>
+            <td style="text-align:center;white-space:nowrap;">
+                <button type="button" class="btn btn-secondary tbl-btn" onclick="openAlertEditor(${row.uid})">✏️</button>
+                <button type="button" class="btn btn-danger tbl-btn"    onclick="removeAlertRow(${row.uid})">✕</button>
+            </td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+// ── 3. Replace openAlertEditor() ─────────────────────────────────
+
+async function openAlertEditor(uid) {
     const row = alertRows.find(r => r.uid === uid);
     if (!row) return;
     editingAlertUid = uid;
+
     const isCustom = row.alertKey === '__custom__';
     const def      = isCustom ? null : ALERT_TYPES[row.alertKey];
-    document.getElementById('alertEditorTitle').textContent = isCustom ? `Edit Custom Rule — ${row.name}` : `Edit ${def?.label}`;
 
-    const sched     = row.schedule || {};
-    const activeDays = sched.days || [];
+    document.getElementById('alertEditorTitle').textContent =
+        isCustom ? `Edit Custom Rule — ${row.name}` : `Edit ${def?.label || row.alertKey}`;
+
+    // ── Build dynamic fields HTML ────────────────────────────
+    let fieldsHtml = '';
+
+    if (!isCustom && def?.fields?.length) {
+        for (const f of def.fields) {
+            const currentVal = row.params?.[f.key] ?? f.default;
+
+            let inputHtml = '';
+
+            if (f.field_type === 'number') {
+                inputHtml = `
+                    <div style="display:flex;align-items:center;gap:0.75rem;">
+                        <input type="number" class="form-input alert-param-input"
+                               data-param-key="${f.key}"
+                               value="${currentVal ?? ''}"
+                               min="${f.min_value}" max="${f.max_value}"
+                               style="max-width:140px;">
+                        ${f.unit ? `<span style="color:var(--text-muted);">${f.unit}</span>` : ''}
+                    </div>`;
+
+            } else if (f.field_type === 'text') {           // ← NEW CASE
+                inputHtml = `
+                    <input type="text" class="form-input alert-param-input"
+                           data-param-key="${f.key}"
+                           value="${currentVal ?? ''}"
+                           placeholder="${f.help_text || ''}"
+                           style="max-width:280px;">`;
+
+            } else if (f.field_type === 'checkbox') {
+                inputHtml = `
+                    <label class="toggle-label" style="display:inline-flex;align-items:center;gap:0.6rem;cursor:pointer;">
+                        <input type="checkbox" class="alert-param-input"
+                               data-param-key="${f.key}"
+                               ${currentVal ? 'checked' : ''}>
+                        <span style="font-size:0.875rem;color:var(--text-secondary);">${f.label}</span>
+                    </label>`;
+
+            } else if (f.field_type === 'select') {
+                let options = f.options || [];
+                if (f.key === 'geofence_id' && editingDeviceId) {
+                    options = await loadGeofencesForDevice(editingDeviceId);
+                }
+                const optHtml = options.map(o =>
+                    `<option value="${o.value}" ${String(currentVal) === String(o.value) ? 'selected' : ''}>${o.label}</option>`
+                ).join('');
+                inputHtml = `
+                    <select class="form-input alert-param-input" data-param-key="${f.key}" style="max-width:280px;">
+                        <option value="">— Select —</option>
+                        ${optHtml}
+                    </select>`;
+            }
+
+            // For checkbox the label is inline; skip the outer label
+            if (f.field_type === 'checkbox') {
+                fieldsHtml += `
+                    <div class="form-group">
+                        ${inputHtml}
+                        ${f.help_text ? `<div class="form-help">${f.help_text}</div>` : ''}
+                    </div>`;
+            } else {
+                fieldsHtml += `
+                    <div class="form-group">
+                        <label class="form-label">${f.label}</label>
+                        ${inputHtml}
+                        ${f.help_text ? `<div class="form-help">${f.help_text}</div>` : ''}
+                    </div>`;
+            }
+        }
+    } else if (isCustom) {
+        fieldsHtml = `
+            <div class="form-group">
+                <label class="form-label">Rule Name</label>
+                <input type="text" class="form-input" id="editor-custom-name" value="${row.name || ''}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Condition</label>
+                <input type="text" class="form-input" id="editor-custom-rule" value="${row.rule || ''}">
+            </div>`;
+    }
+
+    // ── Schedule section ─────────────────────────────────────
+    const sched      = row.schedule || {};
+    const activeDays = sched.days   || [];
     const hourStart  = sched.hourStart ?? 0;
     const hourEnd    = sched.hourEnd   ?? 23;
 
@@ -392,74 +593,64 @@ function openAlertEditor(uid) {
             <input type="checkbox" value="${i}"${activeDays.includes(i) ? ' checked' : ''}> ${day}
         </label>`).join('');
 
-    const hourOpts = (sel) => Array.from({length:24}, (_,h) =>
-        `<option value="${h}"${h===sel?' selected':''}>${pad(h)}:00</option>`).join('');
+    const hourOpts    = (sel) => Array.from({ length: 24 }, (_, h) =>
+        `<option value="${h}"${h === sel ? ' selected' : ''}>${pad(h)}:00</option>`).join('');
+    const hourEndOpts = Array.from({ length: 24 }, (_, h) =>
+        `<option value="${h}"${h === hourEnd ? ' selected' : ''}>${pad(h)}:59</option>`).join('');
 
-    const hourEndOpts = Array.from({length:24}, (_,h) =>
-        `<option value="${h}"${h===hourEnd?' selected':''}>${pad(h)}:59</option>`).join('');
-
+    // ── Notification channels ────────────────────────────────
     const chHtml = userChannels.length
         ? userChannels.map(c => `
-            <label class="channel-pill${(row.channels||[]).includes(c.name)?' active':''}">
-                <input type="checkbox" class="editor-channel-cb" value="${c.name}"${(row.channels||[]).includes(c.name)?' checked':''}> ${c.name}
+            <label class="channel-pill${(row.channels || []).includes(c.name) ? ' active' : ''}">
+                <input type="checkbox" class="editor-channel-cb" value="${c.name}"${(row.channels || []).includes(c.name) ? ' checked' : ''}>
+                ${c.name}
             </label>`).join('')
         : '<span style="color:var(--text-muted);font-size:0.875rem;">No notification channels configured.</span>';
 
     document.getElementById('alertEditorBody').innerHTML = `
-        ${!isCustom ? `
-        <div class="form-group">
-            <label class="form-label">${def?.label} — Threshold</label>
-            <div style="display:flex;align-items:center;gap:0.75rem;">
-                <input type="number" class="form-input" id="editor-value" value="${row.value}" min="${def?.min}" max="${def?.max}" style="max-width:130px;">
-                <span style="color:var(--text-muted);">${def?.unit}</span>
-            </div>
-            <div style="color:var(--text-muted);font-size:0.8rem;margin-top:0.4rem;">${def?.desc}</div>
-        </div>` : `
-        <div class="form-group">
-            <label class="form-label">Rule Name</label>
-            <input type="text" class="form-input" id="editor-custom-name" value="${row.name}">
+        <div style="display:flex;flex-direction:column;gap:0.25rem;">
+            ${def?.description ? `<p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 1rem;">${def.description}</p>` : ''}
+            ${fieldsHtml}
         </div>
-        <div class="form-group">
-            <label class="form-label">Condition</label>
-            <input type="text" class="form-input" id="editor-custom-rule" value="${row.rule}">
-        </div>`}
 
-        <div class="form-group">
+        <div class="form-group" style="margin-top:1.25rem;">
             <label class="form-label">Notify Via</label>
             <div style="display:flex;flex-wrap:wrap;gap:0.4rem;">${chHtml}</div>
         </div>
 
         <div class="form-group">
-            <label class="form-label">Schedule <span style="font-weight:400;color:var(--text-muted);">(unchecked = always active)</span></label>
+            <label class="form-label">
+                Schedule
+                <span style="font-weight:400;color:var(--text-muted);"> (no days selected = always active)</span>
+            </label>
             <div style="margin-bottom:0.75rem;">
                 <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.5rem;font-weight:600;">Active Days</div>
                 <div class="day-picker" id="editor-day-picker">${dayPickerHtml}</div>
             </div>
-            <div>
-                <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.5rem;font-weight:600;">Active Hours</div>
-                <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
-                    <div style="display:flex;align-items:center;gap:0.5rem;">
-                        <label style="font-size:0.82rem;color:var(--text-muted);">From</label>
-                        <select class="form-input" id="editor-hour-start" style="width:95px;">${hourOpts(hourStart)}</select>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:0.5rem;">
-                        <label style="font-size:0.82rem;color:var(--text-muted);">To</label>
-                        <select class="form-input" id="editor-hour-end" style="width:95px;">${hourEndOpts}</select>
-                    </div>
+            <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <label class="form-label" style="font-size:0.78rem;">From</label>
+                    <select class="form-input" id="editor-hour-start" style="width:100px;">${hourOpts(hourStart)}</select>
                 </div>
-                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.35rem;">Applies only when at least one day is selected.</div>
+                <div>
+                    <label class="form-label" style="font-size:0.78rem;">Until</label>
+                    <select class="form-input" id="editor-hour-end" style="width:100px;">${hourEndOpts}</select>
+                </div>
             </div>
         </div>`;
 
-    // Wire day-pill toggles
+    // Wire up day pills
     document.querySelectorAll('#editor-day-picker .day-pill').forEach(pill => {
+        const cb = pill.querySelector('input');
+        if (!cb) return;
+        pill.classList.toggle('active', cb.checked);
         pill.addEventListener('click', () => {
-            const cb = pill.querySelector('input');
             cb.checked = !cb.checked;
             pill.classList.toggle('active', cb.checked);
         });
     });
-    // Wire channel-pill toggles
+
+    // Wire up channel pills
     document.querySelectorAll('#alertEditorBody .channel-pill').forEach(pill => {
         const cb = pill.querySelector('input');
         if (!cb) return;
@@ -480,23 +671,42 @@ function closeAlertEditor() {
 function saveAlertFromEditor() {
     const row = alertRows.find(r => r.uid === editingAlertUid);
     if (!row) return;
+
     const isCustom = row.alertKey === '__custom__';
-    if (!isCustom) {
-        const v = parseFloat(document.getElementById('editor-value')?.value);
-        if (!isNaN(v)) row.value = v;
-    } else {
+
+    if (isCustom) {
         const n = document.getElementById('editor-custom-name')?.value.trim();
         const r = document.getElementById('editor-custom-rule')?.value.trim();
         if (n) row.name = n;
         if (r) row.rule = r;
+    } else {
+        // Collect all param inputs
+        if (!row.params) row.params = {};
+        document.querySelectorAll('#alertEditorBody .alert-param-input').forEach(input => {
+            const key = input.dataset.paramKey;
+            if (!key) return;
+            if (input.type === 'checkbox') {
+                row.params[key] = input.checked;
+            } else if (input.type === 'number') {
+                const v = parseFloat(input.value);
+                if (!isNaN(v)) row.params[key] = v;
+            } else {
+                row.params[key] = input.value;
+            }
+        });
     }
+
+    // Channels
     row.channels = [];
     document.querySelectorAll('.editor-channel-cb:checked').forEach(cb => row.channels.push(cb.value));
+
+    // Schedule
     const activeDays = [];
     document.querySelectorAll('#editor-day-picker input:checked').forEach(cb => activeDays.push(parseInt(cb.value)));
     const hs = parseInt(document.getElementById('editor-hour-start').value);
     const he = parseInt(document.getElementById('editor-hour-end').value);
-    row.schedule = activeDays.length ? { days: activeDays.sort((a,b)=>a-b), hourStart:hs, hourEnd:he } : null;
+    row.schedule = activeDays.length ? { days: activeDays.sort((a, b) => a - b), hourStart: hs, hourEnd: he } : null;
+
     closeAlertEditor();
     renderAlertsTable();
 }
@@ -504,17 +714,28 @@ function saveAlertFromEditor() {
 // ── Build config from alertRows ───────────────────────────────────
 
 function buildConfigFromAlertRows(existing = {}) {
-    const config = { ...existing, alert_rows:[], alert_channels:{}, custom_rules:[] };
-    for (const key of Object.keys(ALERT_TYPES)) delete config[key];
+    const config = {
+        ...existing,
+        alert_rows:     [],
+        alert_channels: {},
+        custom_rules:   [],
+    };
+
+    // Remove old flat alert keys so they don't linger
+    const legacyKeys = ['speed_tolerance', 'idle_timeout_minutes', 'offline_timeout_hours', 'towing_threshold_meters', 'speed_duration_seconds'];
+    legacyKeys.forEach(k => delete config[k]);
+
     alertRows.forEach(row => {
         config.alert_rows.push({ ...row });
+
         if (row.alertKey === '__custom__') {
-            config.custom_rules.push({ name:row.name, rule:row.rule, channels:row.channels||[] });
+            config.custom_rules.push({ name: row.name, rule: row.rule, channels: row.channels || [] });
         } else {
-            config[row.alertKey]               = row.value;
+            // Keep alert_channels for notification dispatch compatibility
             config.alert_channels[row.alertKey] = row.channels || [];
         }
     });
+
     return config;
 }
 
@@ -534,10 +755,7 @@ async function handleSubmit(event) {
     const newConfig = buildConfigFromAlertRows(existingConfig);
     newConfig.speed_duration_seconds = existingConfig.speed_duration_seconds || 30;
     newConfig.sensors     = existingConfig.sensors || {};
-    newConfig.maintenance = {
-        oil_change_km:    parseInt(document.getElementById('oilChangeKm').value)    || 10000,
-        tire_rotation_km: parseInt(document.getElementById('tireRotationKm').value) || 8000
-    };
+    newConfig.maintenance = existingConfig.maintenance || {};
 
     const payload = {
         name:          document.getElementById('deviceName').value,
