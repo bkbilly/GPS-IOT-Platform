@@ -138,6 +138,13 @@
                                 </label>
                                 <input type="number" id="currentOdometer" class="form-input" placeholder="0" step="0.1" min="0">
                             </div>
+                            <div class="form-group">
+                                <label class="form-label">
+                                    Offline Threshold (hours)
+                                    <span style="font-size:0.8rem;color:var(--text-muted);font-weight:normal;display:block;margin-top:0.25rem;">Hours without data before vehicle is considered offline</span>
+                                </label>
+                                <input type="number" id="offlineTimeoutHours" class="form-input" placeholder="24" step="1" min="1" value="24">
+                            </div>
                         </div>
                     </div>
                 </div>

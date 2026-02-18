@@ -45,6 +45,12 @@
                            placeholder="🔍 Search vehicles..." 
                            oninput="filterDevices()">
                 </div>
+                <div style="display:flex; gap:0.5rem; padding: 0 0.75rem 0.75rem; flex-wrap:wrap;">
+                    <span style="font-size:0.75rem;color:var(--text-muted);align-self:center;margin-right:0.25rem;">Sort:</span>
+                    <button class="btn btn-secondary" style="font-size:0.75rem;padding:0.3rem 0.6rem;" onclick="setSortMode('name')" id="sort-name">Name</button>
+                    <button class="btn btn-secondary" style="font-size:0.75rem;padding:0.3rem 0.6rem;" onclick="setSortMode('lastseen')" id="sort-lastseen">Last Seen</button>
+                    <button class="btn btn-secondary" style="font-size:0.75rem;padding:0.3rem 0.6rem;" onclick="setSortMode('status')" id="sort-status">Status</button>
+                </div>
                 <div class="device-list" id="deviceList"></div>
             </div>
 

@@ -30,6 +30,8 @@ let loadedAlerts = [];
 let currentUser = null;
 const markerAnimations = {};
 const markerState = {};
+let currentSort = localStorage.getItem('vehicleSortMode') || 'name';
+
 
 
 // Helper to format dates to local time for display
@@ -126,9 +128,57 @@ function animateMarker(deviceId, marker, fromLat, fromLng, toLat, toLng, fromHea
     markerAnimations[deviceId] = requestAnimationFrame(step);
 }
 
+
+// Vehicle sidebar status helper
+function getVehicleStatus(device) {
+    if (!device.is_online) return { emoji: '⚪', label: 'Offline', key: 0 };
+    if (!device.ignition_on) return { emoji: '🔴', label: 'Stopped', key: 1 };
+    if ((device.last_speed || 0) < 3) return { emoji: '🟠', label: 'Idling', key: 2 };
+    return { emoji: '🟢', label: 'Moving', key: 3 };
+}
+
+function setSortMode(mode) {
+    currentSort = mode;
+    localStorage.setItem('vehicleSortMode', mode);  // ← ADD THIS LINE
+    document.querySelectorAll('[id^="sort-"]').forEach(b => {
+        b.style.borderColor = '';
+        b.style.color = '';
+    });
+    const active = document.getElementById('sort-' + mode);
+    if (active) {
+        active.style.borderColor = 'var(--accent-primary)';
+        active.style.color = 'var(--accent-primary)';
+    }
+    renderDeviceList();
+}
+
+function getSortedDevices() {
+    const list = [...devices];
+    if (currentSort === 'name') {
+        list.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (currentSort === 'lastseen') {
+        list.sort((a, b) => {
+            const ta = a.last_update ? new Date(a.last_update) : new Date(0);
+            const tb = b.last_update ? new Date(b.last_update) : new Date(0);
+            return tb - ta;
+        });
+    } else if (currentSort === 'status') {
+        list.sort((a, b) => getVehicleStatus(b).key - getVehicleStatus(a).key);
+    }
+    return list;
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     checkLogin(); 
+    // Restore sort button highlight
+    const savedSort = localStorage.getItem('vehicleSortMode') || 'name';
+    const activeBtn = document.getElementById('sort-' + savedSort);
+    if (activeBtn) {
+        activeBtn.style.borderColor = 'var(--accent-primary)';
+        activeBtn.style.color = 'var(--accent-primary)';
+    }
+
     initMap();
     await loadDevices();
     connectWebSocket();
@@ -268,7 +318,7 @@ function renderDeviceList() {
         return;
     }
     
-    devices.forEach(device => {
+    getSortedDevices().forEach(device => {
         const card = document.createElement('div');
         card.className = 'device-card';
         card.id = `device-card-${device.id}`; // Add ID for easier updates
@@ -285,8 +335,7 @@ function renderDeviceList() {
 // Helper to generate card content (used for initial render and updates)
 function getDeviceCardContent(device, icon) {
     const ignIcon = device.ignition_on ? '🔥' : '🅿️';
-    const statusClass = device.is_online ? 'online' : 'offline';
-    const statusText = device.is_online ? 'Online' : 'Offline';
+    const vs = getVehicleStatus(device);
     const lastSeen = timeAgo(device.last_update);
     const mileage = formatDistance(device.total_odometer);
 
@@ -295,8 +344,8 @@ function getDeviceCardContent(device, icon) {
             <div class="device-name">${icon} ${device.name}</div>
             <div class="device-meta">
                 <span class="ignition-icon" id="ign-icon-${device.id}">${ignIcon}</span>
-                <div class="device-status ${statusClass}" id="status-${device.id}">
-                    ${statusText}
+                <div class="device-status" id="status-${device.id}" style="font-size:1rem;">
+                    ${vs.emoji} ${vs.label}
                 </div>
             </div>
         </div>
@@ -335,7 +384,7 @@ function updateSidebarCard(deviceId) {
 
 // Function to update just the times in the sidebar (called every minute)
 function updateSidebarTimes() {
-    devices.forEach(device => {
+    getSortedDevices().forEach(device => {
         const el = document.getElementById(`last-seen-${device.id}`);
         if (el && device.last_update) {
             el.textContent = timeAgo(device.last_update);

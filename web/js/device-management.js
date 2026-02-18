@@ -241,6 +241,7 @@ function openDeviceModal(deviceId, startTab = 'general') {
     document.getElementById('licensePlate').value    = d.license_plate || '';
     document.getElementById('vin').value             = d.vin || '';
     document.getElementById('currentOdometer').value = d.state?.total_odometer != null ? d.state.total_odometer.toFixed(1) : '0.0';
+    document.getElementById('offlineTimeoutHours').value = 24;
 
     const config = d.config || {};
 
@@ -753,6 +754,7 @@ async function handleSubmit(event) {
     const newConfig = buildConfigFromAlertRows(existingConfig);
     newConfig.speed_duration_seconds = existingConfig.speed_duration_seconds || 30;
     newConfig.sensors     = existingConfig.sensors || {};
+    newConfig.offline_timeout_hours = parseInt(document.getElementById('offlineTimeoutHours').value) || 24;
     newConfig.maintenance = existingConfig.maintenance || {};
 
     const payload = {
