@@ -54,7 +54,7 @@ async function loadAllUsers() {
             // Load device counts for each user
             for (const user of users) {
                 try {
-                    const deviceRes = await apiFetch(`${API_BASE}/devices?user_id=${user.id}`);
+                    const deviceRes = await apiFetch(`${API_BASE}/users/${user.id}/devices`);
                     if (deviceRes.ok) {
                         user.deviceCount = (await deviceRes.json()).length;
                     } else {
@@ -81,7 +81,7 @@ function renderUserList(users) {
     container.innerHTML = '';
     
     users.forEach(u => {
-        if (localStorage.getItem('is_admin') === 'true') return; // Don't allow deleting self/admin from list
+        if (u.id === parseInt(localStorage.getItem('user_id'))) return; // Don't allow deleting self/admin from list
         
         const div = document.createElement('div');
         div.className = 'user-list-item';
@@ -111,7 +111,7 @@ async function openAssignModal(userId, username) {
     
     // Get user's current devices
     try {
-        const res = await apiFetch(`${API_BASE}/devices?user_id=${userId}`);
+        const res = await apiFetch(`${API_BASE}/users/${userId}/devices`);
         if (res.ok) {
             const devices = await res.json();
             currentUserDevices = new Set(devices.map(d => d.id));
@@ -197,10 +197,16 @@ async function addNewUser() {
             loadAllUsers();
         } else {
             const err = await res.json();
-            showAlert(err.detail || 'Error creating user', 'error');
+            const message = typeof err.detail === 'string' 
+                ? err.detail 
+                : Array.isArray(err.detail) 
+                    ? err.detail.map(e => e.msg).join(', ') 
+                    : 'Error creating user';
+            showAlert(message, 'error');
         }
     } catch (e) { showAlert('Connection error', 'error'); }
 }
+
 
 async function deleteUser(id) {
     if (!confirm('Are you sure you want to delete this user?')) return;

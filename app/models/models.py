@@ -205,6 +205,7 @@ class AlertHistory(Base):
     address: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     alert_metadata: Mapped[Dict] = mapped_column(JSONB, default={})
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    read_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     is_acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 

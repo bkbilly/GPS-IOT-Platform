@@ -18,7 +18,7 @@ from sqlalchemy import select, delete
 from core.database import get_db
 from core.auth import get_current_user, require_admin, require_self_or_admin
 from models import User, user_device_association
-from models.schemas import UserCreate, UserUpdate, UserResponse
+from models.schemas import UserCreate, UserUpdate, UserResponse, DeviceResponse
 from sqlalchemy import and_
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -39,6 +39,11 @@ async def create_user(user_data: UserCreate, admin: User = Depends(require_admin
     db = get_db()
     return await db.create_user(user_data)
 
+@router.get("/{user_id}/devices", response_model=List[DeviceResponse])
+async def get_user_devices(user_id: int, admin: User = Depends(require_admin)):
+    """Get devices assigned to a specific user. Admin only."""
+    db = get_db()
+    return await db.get_user_devices(user_id)
 
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(user_id: int, caller: User = Depends(require_self_or_admin)):
