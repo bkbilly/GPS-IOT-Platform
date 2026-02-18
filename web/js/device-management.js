@@ -30,7 +30,7 @@ const VEHICLE_ICONS = {
 let ALERT_TYPES = {};
 
 async function loadAlertTypes() {
-    const res = await fetch(`${API_BASE}/alerts/types`);
+    const res = await apiFetch(`${API_BASE}/alerts/types`);
     ALERT_TYPES = await res.json();
     populateAddAlertDropdown(); // re-render once loaded
 }
@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function loadAvailableProtocols() {
     try {
         const baseUrl = API_BASE.replace('/api', '');
-        const res     = await fetch(`${baseUrl}/`);
+        const res     = await apiFetch(`${baseUrl}/`);
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
         const data         = await res.json();
         availableProtocols = data.protocols || [];
@@ -87,7 +87,7 @@ async function loadAvailableProtocols() {
 async function loadUserChannels() {
     try {
         const userId = localStorage.getItem('user_id') || 1;
-        const res    = await fetch(`${API_BASE}/users/${userId}`);
+        const res    = await apiFetch(`${API_BASE}/users/${userId}`);
         if (!res.ok) throw new Error();
         const user   = await res.json();
         userChannels = user.notification_channels || [];
@@ -97,18 +97,18 @@ async function loadUserChannels() {
 async function loadDevices() {
     try {
         const userId = localStorage.getItem('user_id') || 1;
-        const res    = await fetch(`${API_BASE}/devices?user_id=${userId}&_t=${Date.now()}`);
+        const res    = await apiFetch(`${API_BASE}/devices?user_id=${userId}&_t=${Date.now()}`);
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
         devices     = await res.json();
         allDevices  = devices;
 
         for (const device of devices) {
             try {
-                const sr = await fetch(`${API_BASE}/devices/${device.id}/state`);
+                const sr = await apiFetch(`${API_BASE}/devices/${device.id}/state`);
                 if (sr.ok) device.state = await sr.json();
             } catch (e) { /* ignore */ }
             try {
-                const cr = await fetch(`${API_BASE}/devices/${device.id}/command-support`);
+                const cr = await apiFetch(`${API_BASE}/devices/${device.id}/command-support`);
                 device.supports_commands = cr.ok ? (await cr.json()).supports_commands : false;
             } catch (e) { device.supports_commands = false; }
         }
@@ -169,10 +169,9 @@ function renderDeviceTable(list) {
             </td>
             <td style="font-size:0.85rem;color:var(--text-secondary);">${lastUpdate}</td>
             <td style="font-family:var(--font-mono);font-size:0.85rem;">${odometer}</td>
-            <td style="text-align:center;white-space:nowrap;">
-                <button class="btn btn-secondary tbl-btn" onclick="openDeviceModal(${d.id},'general')">✏️ Edit</button>
-                <button class="btn btn-secondary tbl-btn" onclick="openDeviceModal(${d.id},'rawdata')">📊</button>
+            <td style="text-align:right;white-space:nowrap;">
                 ${cmds ? `<button class="btn btn-secondary tbl-btn" onclick="openCommandModal(${d.id})">📡</button>` : ''}
+                <button class="btn btn-secondary tbl-btn" onclick="openDeviceModal(${d.id},'general')">✏️ Edit</button>
             </td>
         </tr>`;
     }).join('');
@@ -200,7 +199,7 @@ function switchModalTab(tabId, btn) {
 
 async function loadGeofencesForDevice(deviceId) {
     try {
-        const res = await fetch(`${API_BASE}/geofences?device_id=${deviceId}`);
+        const res = await apiFetch(`${API_BASE}/geofences?device_id=${deviceId}`);
         if (!res.ok) return [];
         const geofences = await res.json();
         return geofences.map(g => ({ value: String(g.id), label: g.name }));
@@ -772,9 +771,9 @@ async function handleSubmit(event) {
         if (editingDeviceId) {
             const odo = parseFloat(document.getElementById('currentOdometer').value) || null;
             const url = `${API_BASE}/devices/${editingDeviceId}${odo !== null ? `?new_odometer=${odo}` : ''}`;
-            response = await fetch(url, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+            response = await apiFetch(url, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
         } else {
-            response = await fetch(`${API_BASE}/devices`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+            response = await apiFetch(`${API_BASE}/devices`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
         }
 
         if (response.ok) {
@@ -799,7 +798,7 @@ async function deleteCurrentDevice() {
     const d = devices.find(x => x.id === editingDeviceId);
     if (!confirm(`Delete "${d?.name || 'this device'}"?\n\nThis cannot be undone.`)) return;
     try {
-        const res = await fetch(`${API_BASE}/devices/${editingDeviceId}`, { method:'DELETE' });
+        const res = await apiFetch(`${API_BASE}/devices/${editingDeviceId}`, { method:'DELETE' });
         if (res.ok) {
             showAlert('Device deleted', 'success');
             closeDeviceModal();
@@ -820,7 +819,7 @@ async function loadRawDataForModal(deviceId) {
     tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2rem;">Loading&#8230;</td></tr>';
     const end = new Date(), start = new Date(end - 86400000);
     try {
-        const res = await fetch(`${API_BASE}/positions/history`, {
+        const res = await apiFetch(`${API_BASE}/positions/history`, {
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({ device_id:deviceId, start_time:start.toISOString(), end_time:end.toISOString(), max_points:1000, order:'desc' })
         });
@@ -886,7 +885,7 @@ let loadedAlerts = [];
 
 async function loadAlerts() {
     try {
-        const res = await fetch(`${API_BASE}/alerts?unread=true&limit=50`);
+        const res = await apiFetch(`${API_BASE}/alerts?unread=true&limit=50`);
         if (!res.ok) return;
         loadedAlerts = await res.json();
         const list = document.getElementById('alertsList');
@@ -910,12 +909,12 @@ async function loadAlerts() {
 }
 
 async function dismissAlert(id) {
-    try { const r = await fetch(`${API_BASE}/alerts/${id}/read`, {method:'POST'}); if (r.ok) loadAlerts(); } catch(e){}
+    try { const r = await apiFetch(`${API_BASE}/alerts/${id}/read`, {method:'POST'}); if (r.ok) loadAlerts(); } catch(e){}
 }
 function openAlertsModal()  { loadAlerts(); document.getElementById('alertsModal')?.classList.add('active'); }
 function closeAlertsModal() { document.getElementById('alertsModal')?.classList.remove('active'); }
 async function clearAllAlerts() {
     if (!loadedAlerts.length || !confirm('Mark all alerts as read?')) return;
-    for (const a of loadedAlerts) try { await fetch(`${API_BASE}/alerts/${a.id}/read`, {method:'POST'}); } catch(e){}
+    for (const a of loadedAlerts) try { await apiFetch(`${API_BASE}/alerts/${a.id}/read`, {method:'POST'}); } catch(e){}
     loadAlerts(); showAlert('All alerts cleared', 'success');
 }

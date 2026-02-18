@@ -1,0 +1,117 @@
+"""
+User Routes
+CRUD operations for user accounts.
+
+Access rules:
+  GET  /api/users          → admin only
+  POST /api/users          → admin only (create new user)
+  GET  /api/users/{id}     → self or admin
+  PUT  /api/users/{id}     → self or admin (admin can also toggle is_admin)
+  DELETE /api/users/{id}   → admin only
+  POST /api/users/{id}/devices → admin only
+"""
+from typing import List
+
+from fastapi import APIRouter, HTTPException, Query, Depends
+from sqlalchemy import select, delete
+
+from core.database import get_db
+from core.auth import get_current_user, require_admin, require_self_or_admin
+from models import User, user_device_association
+from models.schemas import UserCreate, UserUpdate, UserResponse
+from sqlalchemy import and_
+
+router = APIRouter(prefix="/api/users", tags=["users"])
+
+
+@router.get("", response_model=List[UserResponse])
+async def get_all_users(admin: User = Depends(require_admin)):
+    """Return all users. Admin only."""
+    db = get_db()
+    async with db.get_session() as session:
+        result = await session.execute(select(User))
+        return result.scalars().all()
+
+
+@router.post("", response_model=UserResponse)
+async def create_user(user_data: UserCreate, admin: User = Depends(require_admin)):
+    """Create a new user. Admin only."""
+    db = get_db()
+    return await db.create_user(user_data)
+
+
+@router.get("/{user_id}", response_model=UserResponse)
+async def get_user(user_id: int, caller: User = Depends(require_self_or_admin())):
+    db = get_db()
+    user = await db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@router.put("/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: int,
+    user_data: UserUpdate,
+    caller: User = Depends(require_self_or_admin()),
+):
+    """Update user details. Non-admins cannot change their own is_admin flag."""
+    # Prevent privilege escalation by non-admins
+    if not caller.is_admin and user_data.is_admin is not None:
+        raise HTTPException(status_code=403, detail="Only admins can change admin status")
+
+    db = get_db()
+    user = await db.update_user(user_id, user_data)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@router.delete("/{user_id}")
+async def delete_user(user_id: int, admin: User = Depends(require_admin)):
+    """Delete a user. Admin only."""
+    if admin.id == user_id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    db = get_db()
+    async with db.get_session() as session:
+        result = await session.execute(delete(User).where(User.id == user_id))
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+    return {"status": "deleted"}
+
+
+@router.post("/{user_id}/devices")
+async def assign_device(
+    user_id: int,
+    device_id: int = Query(...),
+    action: str = Query("add"),
+    admin: User = Depends(require_admin),
+):
+    """Assign or remove a device from a user. Admin only."""
+    db = get_db()
+    async with db.get_session() as session:
+        if action == "add":
+            exists = await session.execute(
+                user_device_association.select().where(
+                    and_(
+                        user_device_association.c.user_id == user_id,
+                        user_device_association.c.device_id == device_id,
+                    )
+                )
+            )
+            if not exists.scalar_one_or_none():
+                await session.execute(
+                    user_device_association.insert().values(
+                        user_id=user_id, device_id=device_id, access_level="user"
+                    )
+                )
+        elif action == "remove":
+            await session.execute(
+                user_device_association.delete().where(
+                    and_(
+                        user_device_association.c.user_id == user_id,
+                        user_device_association.c.device_id == device_id,
+                    )
+                )
+            )
+    return {"status": "success"}

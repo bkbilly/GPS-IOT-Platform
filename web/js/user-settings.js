@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSettings();
     
     // Check if admin (ID 1 for simplicity)
-    if (USER_ID === 1) {
+    if (localStorage.getItem('is_admin') === 'true') {
         document.getElementById('adminPanel').style.display = 'block';
         loadAllUsers();
         loadAllDevices();
@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadSettings() {
     try {
-        const res = await fetch(`${API_BASE}/users/${USER_ID}`);
+        const res = await apiFetch(`${API_BASE}/users/${USER_ID}`);
         if (!res.ok) {
             const error = await res.json();
             throw new Error(error.detail || 'Failed to load user data');
@@ -48,13 +48,13 @@ async function loadSettings() {
 
 async function loadAllUsers() {
     try {
-        const res = await fetch(`${API_BASE}/users`);
+        const res = await apiFetch(`${API_BASE}/users`);
         if (res.ok) {
             const users = await res.json();
             // Load device counts for each user
             for (const user of users) {
                 try {
-                    const deviceRes = await fetch(`${API_BASE}/devices?user_id=${user.id}`);
+                    const deviceRes = await apiFetch(`${API_BASE}/devices?user_id=${user.id}`);
                     if (deviceRes.ok) {
                         user.deviceCount = (await deviceRes.json()).length;
                     } else {
@@ -71,7 +71,7 @@ async function loadAllUsers() {
 
 async function loadAllDevices() {
     try {
-        const res = await fetch(`${API_BASE}/devices/all`);
+        const res = await apiFetch(`${API_BASE}/devices/all`);
         if (res.ok) allDevices = await res.json();
     } catch (e) { console.error("Failed to load devices", e); }
 }
@@ -81,7 +81,7 @@ function renderUserList(users) {
     container.innerHTML = '';
     
     users.forEach(u => {
-        if (u.id === 1) return; // Don't allow deleting self/admin from list
+        if (localStorage.getItem('is_admin') === 'true') return; // Don't allow deleting self/admin from list
         
         const div = document.createElement('div');
         div.className = 'user-list-item';
@@ -111,7 +111,7 @@ async function openAssignModal(userId, username) {
     
     // Get user's current devices
     try {
-        const res = await fetch(`${API_BASE}/devices?user_id=${userId}`);
+        const res = await apiFetch(`${API_BASE}/devices?user_id=${userId}`);
         if (res.ok) {
             const devices = await res.json();
             currentUserDevices = new Set(devices.map(d => d.id));
@@ -156,7 +156,7 @@ function filterDeviceList() { renderAssignList(); }
 async function toggleAssignment(deviceId, assign) {
     const action = assign ? 'add' : 'remove';
     try {
-        const res = await fetch(`${API_BASE}/users/${currentAssignUserId}/devices?device_id=${deviceId}&action=${action}`, { method: 'POST' });
+        const res = await apiFetch(`${API_BASE}/users/${currentAssignUserId}/devices?device_id=${deviceId}&action=${action}`, { method: 'POST' });
         if (res.ok) {
             if (assign) currentUserDevices.add(deviceId);
             else currentUserDevices.delete(deviceId);
@@ -183,7 +183,7 @@ async function addNewUser() {
     }
 
     try {
-        const res = await fetch(`${API_BASE}/users`, {
+        const res = await apiFetch(`${API_BASE}/users`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ username, email, password })
@@ -205,7 +205,7 @@ async function addNewUser() {
 async function deleteUser(id) {
     if (!confirm('Are you sure you want to delete this user?')) return;
     try {
-        const res = await fetch(`${API_BASE}/users/${id}`, { method: 'DELETE' });
+        const res = await apiFetch(`${API_BASE}/users/${id}`, { method: 'DELETE' });
         if (res.ok) {
             showAlert('User deleted', 'success');
             loadAllUsers();
@@ -218,7 +218,7 @@ async function promptPasswordChange(id) {
     if (!newPass) return;
     
     try {
-        const res = await fetch(`${API_BASE}/users/${id}`, {
+        const res = await apiFetch(`${API_BASE}/users/${id}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ password: newPass })
@@ -293,7 +293,7 @@ async function saveSettings(e) {
     }
 
     try {
-        const res = await fetch(`${API_BASE}/users/${USER_ID}`, {
+        const res = await apiFetch(`${API_BASE}/users/${USER_ID}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)

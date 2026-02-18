@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const userDisplay = document.getElementById('userNameDisplay');
         if (userDisplay) userDisplay.textContent = username;
     }
-    if (userId === 1) {
+    if (localStorage.getItem('is_admin') === 'true') {
         document.getElementById('userRoleDisplay').textContent = 'Administrator';
     } else {
         document.getElementById('userRoleDisplay').textContent = 'User';
@@ -141,6 +141,7 @@ function handleLogout() {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('user_id');
     localStorage.removeItem('username');
+    localStorage.removeItem('is_admin');
     window.location.href = 'login.html';
 }
 
@@ -158,7 +159,7 @@ function initMap() {
 async function loadDevices() {
     try {
         const userId = localStorage.getItem('user_id');
-        const response = await fetch(`${API_BASE}/devices?user_id=${userId}`);
+        const response = await apiFetch(`${API_BASE}/devices?_t=${Date.now()}`);
         if (!response.ok) {
             if (response.status === 401) {
                 handleLogout(); // Token invalid
@@ -185,7 +186,7 @@ async function loadDevices() {
 // Load Device State
 async function loadDeviceState(deviceId) {
     try {
-        const response = await fetch(`${API_BASE}/devices/${deviceId}/state`);
+        const response = await apiFetch(`${API_BASE}/devices/${deviceId}/state`);
         if (response.ok) {
             const state = await response.json();
             
@@ -476,7 +477,7 @@ async function loadHistory(deviceId, startTime, endTime) {
     }
 
     try {
-        const response = await fetch(`${API_BASE}/positions/history`, {
+        const response = await apiFetch(`${API_BASE}/positions/history`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ device_id: deviceId, start_time: startTime.toISOString(), end_time: endTime.toISOString(), max_points: 2000 })
@@ -628,7 +629,7 @@ async function loadAlerts() {
     try {
         // FIXED: Use user_id from localStorage
         const userId = localStorage.getItem('user_id');
-        const response = await fetch(`${API_BASE}/alerts?user_id=${userId}&unread_only=true`);
+        const response = await apiFetch(`${API_BASE}/alerts?unread_only=true`);
         loadedAlerts = await response.json();
         
         // Fix: Check length for displaying number inside parentheses
@@ -694,7 +695,7 @@ function closeAlertsModal() {
 
 async function dismissAlert(alertId) {
     try {
-        const res = await fetch(`${API_BASE}/alerts/${alertId}/read`, { method: 'POST' });
+        const res = await apiFetch(`${API_BASE}/alerts/${alertId}/read`, { method: 'POST' });
         if (res.ok) loadAlerts();
     } catch (e) {}
 }
@@ -705,7 +706,7 @@ async function clearAllAlerts() {
     
     for (const alert of loadedAlerts) {
         try {
-            await fetch(`${API_BASE}/alerts/${alert.id}/read`, { method: 'POST' });
+            await apiFetch(`${API_BASE}/alerts/${alert.id}/read`, { method: 'POST' });
         } catch (e) {
             console.error('Failed to clear alert', alert.id, e);
         }

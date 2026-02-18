@@ -42,6 +42,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     
+    # Role
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     # Notification channels (Apprise URLs)
     notification_channels: Mapped[Dict] = mapped_column(
         JSONB, 
@@ -76,227 +79,111 @@ class Device(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     imei: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    protocol: Mapped[str] = mapped_column(String(50), nullable=False)  # gt06, teltonika, etc.
-    
-    # Vehicle/Asset info
-    vehicle_type: Mapped[Optional[str]] = mapped_column(String(50))
-    license_plate: Mapped[Optional[str]] = mapped_column(String(20))
-    vin: Mapped[Optional[str]] = mapped_column(String(17))
-    
-    # Device configuration (JSONB for flexibility)
-    config: Mapped[Dict] = mapped_column(
-        JSONB,
-        default={
-            "offline_timeout_hours": 24,
-            "speed_tolerance": 5,  # km/h for speeding alerts
-            "idle_timeout_minutes": 10,
-            "sensors": {
-                # Custom sensor formulas: "fuel": "adc1 * 0.5"
-            },
-            "maintenance": {
-                "oil_change_km": 10000,
-                "tire_rotation_km": 8000,
-            }
-        }
-    )
-    
-    # Status
+    protocol: Mapped[str] = mapped_column(String(50), nullable=False)
+    vehicle_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    license_plate: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    vin: Mapped[Optional[str]] = mapped_column(String(17), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    config: Mapped[Dict] = mapped_column(JSONB, default={})
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    
+
     # Relationships
+    state: Mapped[Optional["DeviceState"]] = relationship(back_populates="device", uselist=False)
     users: Mapped[List["User"]] = relationship(
         secondary=user_device_association,
         back_populates="devices"
     )
-    state: Mapped["DeviceState"] = relationship(back_populates="device", uselist=False)
     positions: Mapped[List["PositionRecord"]] = relationship(back_populates="device")
     trips: Mapped[List["Trip"]] = relationship(back_populates="device")
     geofences: Mapped[List["Geofence"]] = relationship(back_populates="device")
+    alert_history: Mapped[List["AlertHistory"]] = relationship(back_populates="device")
     commands: Mapped[List["CommandQueue"]] = relationship(back_populates="device")
-    
-    __table_args__ = (
-        Index('idx_device_imei', 'imei'),
-        Index('idx_device_protocol', 'protocol'),
-    )
 
 
 class DeviceState(Base):
-    """Current state machine for each device"""
+    """Real-time device state"""
     __tablename__ = 'device_states'
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    device_id: Mapped[int] = mapped_column(Integer, ForeignKey('devices.id', ondelete='CASCADE'), unique=True)
-    
-    # Last known position (PostGIS Geography for accurate distance in meters)
-    last_position: Mapped[Optional[str]] = mapped_column(
-        Geography(geometry_type='POINT', srid=4326),
-        nullable=True
-    )
-    last_latitude: Mapped[Optional[float]] = mapped_column(Float)
-    last_longitude: Mapped[Optional[float]] = mapped_column(Float)
-    last_altitude: Mapped[Optional[float]] = mapped_column(Float)
-    last_speed: Mapped[Optional[float]] = mapped_column(Float)  # km/h
-    last_course: Mapped[Optional[float]] = mapped_column(Float)  # degrees
-    last_address: Mapped[Optional[str]] = mapped_column(Text)  # Reverse geocoded
-    
-    # Status flags
+    device_id: Mapped[int] = mapped_column(Integer, ForeignKey('devices.id', ondelete='CASCADE'), primary_key=True)
+    last_latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    last_longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    last_altitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    last_speed: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    last_course: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    last_address: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     ignition_on: Mapped[bool] = mapped_column(Boolean, default=False)
     is_moving: Mapped[bool] = mapped_column(Boolean, default=False)
     is_online: Mapped[bool] = mapped_column(Boolean, default=False)
-    
-    # Odometer (km)
     total_odometer: Mapped[float] = mapped_column(Float, default=0.0)
     trip_odometer: Mapped[float] = mapped_column(Float, default=0.0)
-    
-    # Timestamps
-    last_update: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
-    last_ignition_on: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    last_ignition_off: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    
-    # Alert hysteresis (prevent alert spam)
-    alert_states: Mapped[Dict] = mapped_column(
-        JSONB,
-        default={
-            "idling_since": None,      # ISO timestamp or null
-            "speeding_since": None,
-            "offline_alerted": False,
-            "towing_alerted": False,
-        }
-    )
-    
-    # Current trip ID (if active)
-    active_trip_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('trips.id'), nullable=True)
-    
-    # Relationship
+    last_update: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    alert_states: Mapped[Dict] = mapped_column(JSONB, default={})
+    sensors: Mapped[Dict] = mapped_column(JSONB, default={})
+
+    # Relationships
     device: Mapped["Device"] = relationship(back_populates="state")
-    
-    __table_args__ = (
-        Index('idx_device_state_last_update', 'last_update'),
-        Index('idx_device_state_position', 'last_position', postgresql_using='gist'),
-    )
 
 
 class PositionRecord(Base):
-    """GPS Position History - Partitioned by time"""
+    """Historical GPS position records"""
     __tablename__ = 'position_records'
     
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     device_id: Mapped[int] = mapped_column(Integer, ForeignKey('devices.id', ondelete='CASCADE'), index=True)
-    
-    # Spatial data (Geography for meter-based calculations)
-    position: Mapped[str] = mapped_column(
-        Geography(geometry_type='POINT', srid=4326),
-        nullable=False
-    )
+    device_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
-    altitude: Mapped[Optional[float]] = mapped_column(Float)
+    altitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    speed: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    course: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    satellites: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    ignition: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    sensors: Mapped[Dict] = mapped_column(JSONB, default={})
     
-    # Motion data
-    speed: Mapped[Optional[float]] = mapped_column(Float)  # km/h
-    course: Mapped[Optional[float]] = mapped_column(Float)  # degrees
-    
-    # GPS metadata
-    satellites: Mapped[Optional[int]] = mapped_column(Integer)
-    hdop: Mapped[Optional[float]] = mapped_column(Float)
-    
-    # Device state at this point
-    ignition: Mapped[Optional[bool]] = mapped_column(Boolean)
-    
-    # Sensor data (flexible JSONB)
-    sensors: Mapped[Optional[Dict]] = mapped_column(JSONB)
-    
-    # Timestamps
-    device_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
-    server_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    
-    # Relationship
+    # Relationships
     device: Mapped["Device"] = relationship(back_populates="positions")
-    
-    __table_args__ = (
-        Index('idx_position_device_time', 'device_id', 'device_time'),
-        Index('idx_position_spatial', 'position', postgresql_using='gist'),
-        # Partition by month (requires manual setup in Alembic)
-        # {'postgresql_partition_by': 'RANGE (device_time)'}
-    )
 
 
 class Trip(Base):
-    """Trip representation (ignition ON to OFF)"""
+    """Detected trip records"""
     __tablename__ = 'trips'
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     device_id: Mapped[int] = mapped_column(Integer, ForeignKey('devices.id', ondelete='CASCADE'), index=True)
-    
-    # Trip path (PostGIS LineString)
-    path_geom: Mapped[Optional[str]] = mapped_column(
-        Geometry(geometry_type='LINESTRING', srid=4326),
-        nullable=True
-    )
-    
-    # Trip metadata
     start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    
-    start_latitude: Mapped[float] = mapped_column(Float)
-    start_longitude: Mapped[float] = mapped_column(Float)
-    start_address: Mapped[Optional[str]] = mapped_column(Text)
-    
-    end_latitude: Mapped[Optional[float]] = mapped_column(Float)
-    end_longitude: Mapped[Optional[float]] = mapped_column(Float)
-    end_address: Mapped[Optional[str]] = mapped_column(Text)
-    
-    # Statistics
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    start_latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    start_longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    end_latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    end_longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     distance_km: Mapped[float] = mapped_column(Float, default=0.0)
-    max_speed: Mapped[Optional[float]] = mapped_column(Float)
-    avg_speed: Mapped[Optional[float]] = mapped_column(Float)
-    duration_minutes: Mapped[Optional[int]] = mapped_column(Integer)
-    
-    # Relationship
+    max_speed: Mapped[float] = mapped_column(Float, default=0.0)
+    avg_speed: Mapped[float] = mapped_column(Float, default=0.0)
+    duration_minutes: Mapped[float] = mapped_column(Float, default=0.0)
+    start_address: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    end_address: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # Relationships
     device: Mapped["Device"] = relationship(back_populates="trips")
-    
-    __table_args__ = (
-        Index('idx_trip_device_start', 'device_id', 'start_time'),
-        Index('idx_trip_path', 'path_geom', postgresql_using='gist'),
-    )
 
 
 class Geofence(Base):
-    """Polygonal geofences for alerts"""
+    """Geofence zones"""
     __tablename__ = 'geofences'
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    device_id: Mapped[Optional[int]] = mapped_column(
-        Integer, 
-        ForeignKey('devices.id', ondelete='CASCADE'), 
-        nullable=True  # NULL = global geofence
-    )
-    
+    device_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('devices.id', ondelete='CASCADE'), nullable=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    
-    # Polygon geometry (Geometry for geofence checks)
-    polygon: Mapped[str] = mapped_column(
-        Geometry(geometry_type='POLYGON', srid=4326),
-        nullable=False
-    )
-    
-    # Alert configuration
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    polygon = mapped_column(Geometry('POLYGON', srid=4326), nullable=False)
     alert_on_enter: Mapped[bool] = mapped_column(Boolean, default=False)
     alert_on_exit: Mapped[bool] = mapped_column(Boolean, default=False)
-    
-    # Metadata
-    color: Mapped[str] = mapped_column(String(7), default='#3388ff')
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    color: Mapped[str] = mapped_column(String(20), default='#3388ff')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    
-    # Relationship
+
+    # Relationships
     device: Mapped[Optional["Device"]] = relationship(back_populates="geofences")
-    
-    __table_args__ = (
-        Index('idx_geofence_polygon', 'polygon', postgresql_using='gist'),
-    )
 
 
 class AlertHistory(Base):
@@ -306,69 +193,37 @@ class AlertHistory(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey('users.id', ondelete='CASCADE'), index=True)
     device_id: Mapped[int] = mapped_column(Integer, ForeignKey('devices.id', ondelete='CASCADE'), index=True)
-    
-    # Alert details
-    alert_type: Mapped[str] = mapped_column(String(50), nullable=False)  # speeding, idling, geofence, etc.
-    severity: Mapped[str] = mapped_column(String(20), default='info')  # info, warning, critical
+    alert_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), default='info')
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    
-    # Location context
-    latitude: Mapped[Optional[float]] = mapped_column(Float)
-    longitude: Mapped[Optional[float]] = mapped_column(Float)
-    address: Mapped[Optional[str]] = mapped_column(Text)
-    
-    # Additional data
-    alert_metadata: Mapped[Optional[Dict]] = mapped_column(JSONB)
-    
-    # Status
+    latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    alert_metadata: Mapped[Dict] = mapped_column(JSONB, default={})
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     is_acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
-    
-    # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    
+
     # Relationships
     user: Mapped["User"] = relationship(back_populates="alert_history")
-    
-    __table_args__ = (
-        Index('idx_alert_user_time', 'user_id', 'created_at'),
-        Index('idx_alert_device_time', 'device_id', 'created_at'),
-    )
+    device: Mapped["Device"] = relationship(back_populates="alert_history")
 
 
 class CommandQueue(Base):
-    """GPRS downlink command queue"""
+    """Command queue for device commands"""
     __tablename__ = 'command_queue'
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     device_id: Mapped[int] = mapped_column(Integer, ForeignKey('devices.id', ondelete='CASCADE'), index=True)
-    
-    # Command payload
-    command_type: Mapped[str] = mapped_column(String(50), nullable=False)  # custom, reset, interval, etc.
-    payload: Mapped[str] = mapped_column(Text, nullable=False)  # Hex or ASCII
-    
-    # Status tracking
-    status: Mapped[str] = mapped_column(
-        String(20), 
-        default='pending'  # pending, sent, acked, failed, timeout
-    )
-    
-    # Timestamps
+    command_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default='pending')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    acked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    
-    # Retry logic
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    acked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     max_retries: Mapped[int] = mapped_column(Integer, default=3)
-    
-    # Response
-    response: Mapped[Optional[str]] = mapped_column(Text)
-    
-    # Relationship
+    response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
     device: Mapped["Device"] = relationship(back_populates="commands")
-    
-    __table_args__ = (
-        Index('idx_command_device_status', 'device_id', 'status'),
-    )

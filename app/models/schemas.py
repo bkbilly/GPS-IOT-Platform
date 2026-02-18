@@ -71,34 +71,23 @@ class NormalizedPosition(BaseModel):
 
 # ==================== Device Schemas ====================
 
-# ── NEW class: AlertSchedule  (add before CustomRule) ───────
 class AlertSchedule(BaseModel):
-    """Active-window schedule for an alert rule.
-
-    days      : list of weekday numbers, 0 = Monday … 6 = Sunday
-    hourStart : first active hour  (0-23, inclusive)
-    hourEnd   : last  active hour  (0-23, inclusive)
-    """
+    """Active-window schedule for an alert rule."""
     days:      List[int] = Field(default_factory=list)
     hourStart: int       = Field(0,  ge=0, le=23)
     hourEnd:   int       = Field(23, ge=0, le=23)
 
 
-# ── NEW class: AlertRow  (add after AlertSchedule) ──────────
 class AlertRow(BaseModel):
-    """
-    One row from the frontend alert table.
-
-    `params` holds all per-row configuration values as a flat dict.
-    Each alert module declares which keys it expects via AlertField.
-    """
+    """One row from the frontend alert table."""
     uid:      int
     alertKey: str
     params:   Dict[str, Any]          = Field(default_factory=dict)
-    name:     Optional[str]           = None   # label for custom rules
-    rule:     Optional[str]           = None   # rule expression for custom rules
+    name:     Optional[str]           = None
+    rule:     Optional[str]           = None
     channels: List[str]               = Field(default_factory=list)
     schedule: Optional[AlertSchedule] = None
+
 
 class CustomRule(BaseModel):
     """Definition for a custom alert rule"""
@@ -108,25 +97,15 @@ class CustomRule(BaseModel):
 
 
 class DeviceConfig(BaseModel):
-    """
-    Device configuration schema.
-    ALL ALERT FIELDS ARE OPTIONAL AND DEFAULT TO None (DISABLED).
-    """
-    # Alert thresholds – None means the alert is DISABLED
+    """Device configuration schema. ALL ALERT FIELDS ARE OPTIONAL AND DEFAULT TO None (DISABLED)."""
     offline_timeout_hours:   Optional[int]   = Field(None, ge=1, le=720)
     speed_tolerance:         Optional[float] = Field(None, ge=0)
     speed_duration_seconds:  Optional[int]   = Field(30,   ge=1)
     idle_timeout_minutes:    Optional[int]   = Field(None, ge=1)
     towing_threshold_meters: Optional[int]   = Field(None, ge=10)
-
-    # Mapping of standard alert keys → list of channel names
     alert_channels: Dict[str, List[str]] = Field(default_factory=dict)
-
-    # Full alert-row list – persists per-row schedule & channel selection
-    alert_rows: List[AlertRow] = Field(default_factory=list)   # ← NEW
-
+    alert_rows: List[AlertRow] = Field(default_factory=list)
     custom_rules: List[Union[CustomRule, str]] = Field(default_factory=list)
-
     sensors:     Dict[str, str] = Field(default_factory=dict)
     maintenance: Dict[str, int] = Field(default_factory=dict)
 
@@ -138,7 +117,6 @@ class DeviceCreate(BaseModel):
     vehicle_type: Optional[str] = "car"
     license_plate: Optional[str] = None
     vin: Optional[str] = None
-    # DEFAULT CONFIG: ALL ALERTS DISABLED (None)
     config: DeviceConfig = Field(
         default_factory=lambda: DeviceConfig(
             offline_timeout_hours=None,
@@ -192,6 +170,8 @@ class UserCreate(BaseModel):
     password: str = Field(..., min_length=8)
     notification_channels: List[Dict[str, str]] = Field(default_factory=list)
     language: Optional[str] = "en"
+    is_admin: bool = False
+
 
 class UserUpdate(BaseModel):
     """Schema for updating user details"""
@@ -199,16 +179,21 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=8)
     notification_channels: Optional[List[Dict[str, str]]] = None
     language: Optional[str] = None
+    is_admin: Optional[bool] = None
+
 
 class UserLogin(BaseModel):
     username: str
     password: str
+
 
 class Token(BaseModel):
     access_token: str
     token_type: str
     user_id: int
     username: str
+    is_admin: bool
+
 
 class UserResponse(BaseModel):
     """Schema for returning user details"""
@@ -216,6 +201,7 @@ class UserResponse(BaseModel):
     id: int
     username: str
     email: str
+    is_admin: bool = False
     language: Optional[str] = "en"
     notification_channels: List[Dict[str, str]] = Field(default_factory=list)
     created_at: datetime
@@ -270,23 +256,21 @@ class TripResponse(BaseModel):
     device_id: int
     start_time: datetime
     end_time: Optional[datetime]
-    start_latitude: float
-    start_longitude: float
-    start_address: Optional[str] = None
-    end_latitude: Optional[float] = None
-    end_longitude: Optional[float] = None
-    end_address: Optional[str] = None
+    start_latitude: Optional[float]
+    start_longitude: Optional[float]
+    end_latitude: Optional[float]
+    end_longitude: Optional[float]
     distance_km: float
-    max_speed: Optional[float] = None
-    avg_speed: Optional[float] = None
-    duration_minutes: Optional[int] = None
+    max_speed: float
+    avg_speed: float
+    duration_minutes: float
+    start_address: Optional[str]
+    end_address: Optional[str]
 
 
 class TripGeoJSON(BaseModel):
-    """GeoJSON LineString for trip path"""
-    type: str = "Feature"
-    geometry: Dict[str, Any]
-    properties: TripResponse
+    type: str = "FeatureCollection"
+    features: List[PositionGeoJSON]
 
 
 # ==================== Geofence Schemas ====================
@@ -295,19 +279,10 @@ class GeofenceCreate(BaseModel):
     device_id: Optional[int] = None
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
-    polygon: List[List[float]] = Field(..., description="Array of [lon, lat]")
+    polygon: List[List[float]]
     alert_on_enter: bool = False
     alert_on_exit: bool = False
-    color: str = Field("#3388ff", pattern=r'^#[0-9A-Fa-f]{6}$')
-    
-    @field_validator('polygon')
-    @classmethod
-    def validate_polygon(cls, v):
-        if len(v) < 3:
-            raise ValueError("Polygon must have at least 3 points")
-        if v[0] != v[-1]:
-            v.append(v[0])
-        return v
+    color: str = '#3388ff'
 
 
 class GeofenceResponse(BaseModel):
@@ -319,19 +294,18 @@ class GeofenceResponse(BaseModel):
     description: Optional[str]
     alert_on_enter: bool
     alert_on_exit: bool
-    color: str
     is_active: bool
+    color: str
     created_at: datetime
 
 
 # ==================== Alert Schemas ====================
 
 class AlertCreate(BaseModel):
-    """Internal schema for creating alerts"""
     user_id: int
     device_id: int
-    alert_type: AlertType
-    severity: Severity
+    alert_type: str
+    severity: str = "info"
     message: str
     latitude: Optional[float] = None
     longitude: Optional[float] = None

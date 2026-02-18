@@ -76,7 +76,7 @@ function switchCommandSubtab(subtab) {
 // Load available commands for the device
 async function loadAvailableCommands() {
     try {
-        const response = await fetch(`${API_BASE}/devices/${currentCommandDeviceId}/command-support`);
+        const response = await apiFetch(`${API_BASE}/devices/${currentCommandDeviceId}/command-support`);
         if (!response.ok) {
             throw new Error('Failed to load command support info');
         }
@@ -182,7 +182,7 @@ async function previewCommand() {
     }
     
     try {
-        const response = await fetch(`${API_BASE}/devices/${currentCommandDeviceId}/command/preview`, {
+        const response = await apiFetch(`${API_BASE}/devices/${currentCommandDeviceId}/command/preview`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -242,7 +242,7 @@ async function sendCommand() {
     btn.textContent = '⏳ Sending...';
     
     try {
-        const response = await fetch(`${API_BASE}/devices/${currentCommandDeviceId}/command`, {
+        const response = await apiFetch(`${API_BASE}/devices/${currentCommandDeviceId}/command`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -292,7 +292,7 @@ async function previewCustomCommand() {
     }
     
     try {
-        const response = await fetch(`${API_BASE}/devices/${currentCommandDeviceId}/command/preview`, {
+        const response = await apiFetch(`${API_BASE}/devices/${currentCommandDeviceId}/command/preview`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -337,7 +337,7 @@ async function sendCustomCommand() {
     btn.textContent = '⏳ Sending...';
     
     try {
-        const response = await fetch(`${API_BASE}/devices/${currentCommandDeviceId}/command`, {
+        const response = await apiFetch(`${API_BASE}/devices/${currentCommandDeviceId}/command`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -378,7 +378,7 @@ async function sendCustomCommand() {
 // Load Command History
 async function loadCommandHistory() {
     try {
-        const response = await fetch(`${API_BASE}/devices/${currentCommandDeviceId}/commands`);
+        const response = await apiFetch(`${API_BASE}/devices/${currentCommandDeviceId}/commands`);
         if (!response.ok) {
             throw new Error('Failed to load command history');
         }
