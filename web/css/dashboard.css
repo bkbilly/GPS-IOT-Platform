@@ -932,3 +932,33 @@ body::before {
     padding: 1rem 1rem 1.5rem 1rem; /* Adjusted padding */
     border-bottom: 1px solid var(--border-color);
 }
+
+/* Custom alert module pill */
+.custom-alert-module {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    background: rgba(var(--accent-warning-rgb, 245, 158, 11), 0.1);
+    border: 1px solid rgba(var(--accent-warning-rgb, 245, 158, 11), 0.3);
+    border-radius: 6px;
+    padding: 0.3rem 0.55rem;
+    max-width: 260px;
+}
+
+.custom-alert-module-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.custom-alert-module-cond {
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

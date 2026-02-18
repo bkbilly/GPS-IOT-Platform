@@ -512,18 +512,16 @@ class DatabaseService:
             result = await session.execute(query)
             return result.scalars().all()
 
-    async def get_offline_devices(self) -> List[tuple[Device, DeviceState]]:
+    async def get_all_active_devices_with_state(self) -> List[tuple[Device, DeviceState]]:
+        """Returns all active devices alongside their state, regardless of online status."""
         async with self.get_session() as session:
-            result = await session.execute(select(Device, DeviceState).join(DeviceState, Device.id == DeviceState.device_id).where(and_(Device.is_active == True, DeviceState.is_online == True)))
-            devices_states = result.all()
-            offline = []
-            for device, state in devices_states:
-                config = device.config or {}
-                timeout = config.get('offline_timeout_hours', 24)
-                if timeout is None: continue
-                if state.last_update and state.last_update < datetime.utcnow() - timedelta(hours=timeout):
-                    offline.append((device, state))
-            return offline
+            result = await session.execute(
+                select(Device, DeviceState)
+                .join(DeviceState, Device.id == DeviceState.device_id)
+                .where(Device.is_active == True)
+                .options(selectinload(Device.users))
+            )
+            return [(device, state) for device, state in result.all()]
 
     async def mark_device_offline(self, device_id: int):
         async with self.get_session() as session:

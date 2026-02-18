@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 
 from core.config import get_settings
 from core.database import get_db, init_database
-from core.alert_engine import get_alert_engine, offline_detection_task
+from core.alert_engine import get_alert_engine, periodic_alert_task
 from core.gateway import TCPServer, UDPServer, connection_manager
 from models import Device, AlertHistory
 from models.schemas import NormalizedPosition, WSMessageType
@@ -206,7 +206,7 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(server.start())
             logger.info(f"Started TCP Server for {name} on port {port}")
 
-    asyncio.create_task(offline_detection_task())
+    asyncio.create_task(periodic_alert_task())
     logger.info("GPS/IoT Platform started successfully")
 
     yield

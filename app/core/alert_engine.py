@@ -85,8 +85,6 @@ class AlertEngine:
             if state.alert_states is None:
                 state.alert_states = {}
 
-            from alerts import ALERT_REGISTRY
-
             alerts = []
             alert_rows = device.config.get("alert_rows", [])
 
@@ -95,26 +93,29 @@ class AlertEngine:
                     continue
 
                 alert_key = row.get("alertKey")
-                if not alert_key or alert_key == "__custom__":
+                if not alert_key:
                     continue
 
                 alert_cls = ALERT_REGISTRY.get(alert_key)
                 if not alert_cls:
                     continue
 
-                # Schedule check (unchanged from before)
-                if not self._is_alert_active(alert_key, device):
+                rule_name = row.get("name") if alert_key == "__custom__" else None
+                if not self._is_alert_active(alert_key, device, rule_name=rule_name):
                     continue
 
-                # Params dict (new — replaces single `value` field)
-                params = row.get("params", {})
+                # For custom rows, params come from the row's top-level name/rule/channels fields
+                if alert_key == "__custom__":
+                    params = {
+                        "name":     row.get("name", ""),
+                        "rule":     row.get("rule", ""),
+                        "channels": row.get("channels", []),
+                    }
+                else:
+                    params = row.get("params", {})
 
                 results = await alert_cls().check_many(position, device, state, params)
                 alerts.extend(results)
-
-            # Custom rules (unchanged)
-            custom_alerts = await self._check_custom_rules(position, device, state)
-            alerts.extend(custom_alerts)
 
             if state.alert_states is not None:
                 db = get_db()
@@ -156,43 +157,6 @@ class AlertEngine:
                 
             # 3. External notifications (Email, Telegram, etc. per user)
             await self._send_notification(user, device, alert_data)
-
-    async def _check_custom_rules(self, position, device, state):
-        rules = device.config.get('custom_rules', [])
-        alerts = []
-        ctx = {'speed': position.speed or 0, 'ignition': position.ignition, **position.sensors}
-        for rule_obj in rules:
-            try:
-                rule_str  = rule_obj.get('rule')  if isinstance(rule_obj, dict) else str(rule_obj)
-                rule_name = rule_obj.get('name', '') if isinstance(rule_obj, dict) else ''
-                rule_ch   = rule_obj.get('channels', []) if isinstance(rule_obj, dict) else []
-                if not rule_str:
-                    continue
-
-                # ── schedule gate ──────────────────────────────────────
-                if not self._is_alert_active('__custom__', device, rule_name=rule_name):
-                    state.alert_states[f"c_f_{re.sub(r'[^a-zA-Z]', '', rule_str)}"] = False
-                    continue
-                # ──────────────────────────────────────────────────────
-
-                if rule_str not in self.rule_cache:
-                    self.rule_cache[rule_str] = rule_engine.Rule(rule_str)
-
-                if self.rule_cache[rule_str].matches(ctx):
-                    key = f"c_f_{re.sub(r'[^a-zA-Z]', '', rule_str)}"
-                    if not state.alert_states.get(key):
-                        alerts.append({
-                            'type': AlertType.CUSTOM,
-                            'severity': Severity.WARNING,
-                            'message': f"Alert: {rule_name}",
-                            'alert_metadata': {'selected_channels': rule_ch},
-                        })
-                        state.alert_states[key] = True
-                else:
-                    state.alert_states[f"c_f_{re.sub(r'[^a-zA-Z]', '', rule_str)}"] = False
-            except:
-                pass
-        return alerts
 
     async def _send_notification(self, user: User, device: Device, alert_data: Dict[str, Any]):
         try:
@@ -252,28 +216,57 @@ class AlertEngine:
             apobj.notify(title=title, body=body)
         except: pass
 
-async def offline_detection_task():
+async def periodic_alert_task():
+    """
+    Background task that runs every 60 seconds and checks all time-based alert
+    modules that can't be triggered by incoming positions (e.g. offline detection).
+    
+    Any alert module that implements check_device() will be called here for
+    every active device.
+    """
+
     while True:
         try:
-            db = get_db(); offline = await db.get_offline_devices()
-            for device, state in offline:
-                await db.mark_device_offline(device.id)
-                timeout = device.config.get('offline_timeout_hours', 24)
-                if not state.alert_states.get('offline_alerted'):
-                    state.alert_states['offline_alerted'] = True
-                    
-                    alert_data = {
-                        'type': AlertType.OFFLINE, 
-                        'severity': Severity.WARNING, 
-                        'message': f"Device {device.name} offline (> {timeout}h).", 
-                        'alert_metadata': {'config_key': 'offline_timeout_hours'}
-                    }
-                    
-                    # Use central dispatcher to avoid double WS broadcast
-                    await alert_engine._dispatch_alert(device.users, device, alert_data)
-            
-            await asyncio.sleep(300)
-        except: await asyncio.sleep(60)
+            db = get_db()
+            devices_with_state = await db.get_all_active_devices_with_state()
+
+            for device, state in devices_with_state:
+                if state.alert_states is None:
+                    state.alert_states = {}
+
+                alert_rows = device.config.get("alert_rows", [])
+
+                for row in alert_rows:
+                    if not isinstance(row, dict):
+                        continue
+
+                    alert_key = row.get("alertKey")
+                    if not alert_key:
+                        continue
+
+                    alert_cls = ALERT_REGISTRY.get(alert_key)
+                    if not alert_cls:
+                        continue
+
+                    # Only process modules that support time-based checking
+                    instance = alert_cls()
+                    if not hasattr(instance, "check_device"):
+                        continue
+
+                    if not alert_engine._is_alert_active(alert_key, device):
+                        continue
+
+                    params = row.get("params", {})
+                    alert_data = await instance.check_device(device, state, params)
+
+                    if alert_data:
+                        await db.update_device_alert_state(device.id, state.alert_states)
+                        await alert_engine._dispatch_alert(device.users, device, alert_data)
+
+        except Exception as e:
+            logger.error(f"Periodic alert task error: {e}")
+
+        await asyncio.sleep(60)  # check every minute — fine for sub-hour timeouts
 
 alert_engine = AlertEngine()
 def get_alert_engine() -> AlertEngine: return alert_engine

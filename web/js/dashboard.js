@@ -567,9 +567,15 @@ function handleWebSocketMessage(message) {
         }
         updateStats();
     } else if (message.type === 'alert') {
-        let title = message.data.type.replace('_', ' ').toUpperCase();
-        if (message.data.type === 'custom' && message.data.alert_metadata?.name) title = message.data.alert_metadata.name;
-        showAlert({ title: title, message: message.data.message, type: message.data.severity || 'info' });
+        let title, toastMessage;
+        if (message.data.type === 'custom' && message.data.alert_metadata?.rule_name) {
+            title        = message.data.alert_metadata.rule_name;
+            toastMessage = message.data.alert_metadata.rule_condition || message.data.message;
+        } else {
+            title        = message.data.type.replace(/_/g, ' ').toUpperCase();
+            toastMessage = message.data.message;
+        }
+        showAlert({ title, message: toastMessage, type: message.data.severity || 'info' });
         loadAlerts();
     }
 }
@@ -801,16 +807,13 @@ async function loadAlerts() {
             item.className = `alert-item ${alert.severity}`;
             const icon = { 'speeding': '⚡', 'geofence_enter': '📍', 'geofence_exit': '🚪', 'offline': '📡', 'towing': '🚨' }[alert.alert_type] || '🔔';
             
-            let title = alert.alert_type.replace('_', ' ').toUpperCase();
-            let messageText = alert.message;
-
-            if (alert.alert_type === 'custom' && alert.alert_metadata) {
-                if (alert.alert_metadata.name) {
-                    title = alert.alert_metadata.name;
-                }
-                if (alert.alert_metadata.rule) {
-                    messageText = alert.alert_metadata.rule;
-                }
+            let title, messageText;
+            if (alert.alert_type === 'custom' && alert.alert_metadata?.rule_name) {
+                title       = alert.alert_metadata.rule_name;
+                messageText = alert.alert_metadata.rule_condition || alert.message;
+            } else {
+                title       = alert.alert_type.replace(/_/g, ' ').toUpperCase();
+                messageText = alert.message;
             }
             
             item.innerHTML = `

@@ -429,13 +429,16 @@ function renderAlertsTable() {
         const isCustom = row.alertKey === '__custom__';
         const def      = isCustom ? null : ALERT_TYPES[row.alertKey];
         const label    = isCustom
-            ? `⚡ ${row.name}`
+            ? `<span class="custom-alert-module">
+                   <span class="custom-alert-module-title">⚡ ${row.name}</span>
+                   <span class="custom-alert-module-cond">${row.rule}</span>
+               </span>`
             : (def?.icon ? `${def.icon} ${def.label}` : def?.label) || row.alertKey;
 
         // Threshold column: all fields except checkboxes
         let thresh;
         if (isCustom) {
-            thresh = `<span style="font-family:var(--font-mono);font-size:0.73rem;color:var(--text-muted);word-break:break-all;">${row.rule}</span>`;
+            thresh = `<span style="color:var(--text-muted);font-size:0.8rem;">—</span>`;
         } else {
             const visibleFields = (def?.fields || []).filter(f => f.field_type !== 'checkbox');
             if (visibleFields.length) {
@@ -476,7 +479,10 @@ function renderAlertsTable() {
         tr.dataset.uid = row.uid;
         tr.innerHTML   = `
             <td style="color:var(--text-muted);font-size:0.82rem;">${idx + 1}</td>
-            <td><span class="alert-type-label ${isCustom ? 'custom' : 'system'}">${label}</span></td>
+            <td>${isCustom
+                ? label
+                : `<span class="alert-type-label system">${label}</span>`
+            }</td>
             <td><div style="display:flex;flex-wrap:wrap;gap:0.3rem;">${thresh}</div></td>
             <td><div style="display:flex;flex-wrap:wrap;gap:0.3rem;">${chHtml}</div></td>
             <td>${schedHtml}</td>

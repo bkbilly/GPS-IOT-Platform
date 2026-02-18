@@ -12,6 +12,7 @@ class AlertField:
 
     The frontend renders each field automatically based on `field_type`:
       - "number"      → numeric input with min/max/unit
+      - "text"        → plain text input
       - "select"      → <select> dropdown; provide `options` as list of {value, label}
       - "multiselect" → checkboxes; provide `options`
       - "checkbox"    → single boolean toggle
