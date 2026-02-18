@@ -32,9 +32,16 @@ async def main():
                     username="admin",
                     email="admin@example.com",
                     password="admin_password",  # Must be > 8 chars
-                    notification_channels={}
+                    notification_channels={},
+                    is_admin=True,
                 )
                 user = await db_service.create_user(default_user)
+                async with db_service.get_session() as session:
+                    from sqlalchemy import text
+                    await session.execute(
+                        text("UPDATE users SET is_admin = TRUE WHERE id = :id"),
+                        {"id": user.id}
+                    )
                 print(f"✓ Default user created: {user.username} (ID: {user.id})")
                 print("  Email: admin@example.com")
                 print("  Password: admin_password")
