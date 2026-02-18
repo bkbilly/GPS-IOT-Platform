@@ -28,6 +28,9 @@ let historyData = [];
 let historyIndex = 0;
 let loadedAlerts = [];
 let currentUser = null;
+const markerAnimations = {};
+const markerState = {};
+
 
 // Helper to format dates to local time for display
 function formatDateToLocal(dateString) {
@@ -75,6 +78,52 @@ function timeAgo(dateString) {
 function formatDistance(meters) {
     if (meters === undefined || meters === null) return '0 km';
     return `${parseFloat(meters).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} km`;
+}
+
+// ── Smooth marker animation ───────────────────────────────────────
+function animateMarker(deviceId, marker, fromLat, fromLng, toLat, toLng, fromHeading, toHeading, duration = 800) {
+    // Cancel any in-progress animation for this device
+    if (markerAnimations[deviceId]) {
+        cancelAnimationFrame(markerAnimations[deviceId]);
+        delete markerAnimations[deviceId];
+    }
+
+    const startTime = performance.now();
+
+    // Shortest-path heading interpolation
+    let dH = ((toHeading - fromHeading + 540) % 360) - 180;
+
+    function step(now) {
+        const elapsed = now - startTime;
+        const t = Math.min(elapsed / duration, 1);
+        // Ease in-out cubic
+        const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+        const lat = fromLat + (toLat - fromLat) * ease;
+        const lng = fromLng + (toLng - fromLng) * ease;
+        marker.setLatLng([lat, lng]);
+
+        // Animate heading on the SVG/icon element inside the marker
+        const currentHeading = fromHeading + dH * ease;
+        const el = marker.getElement();
+        if (el) {
+            const svg = el.querySelector('svg');
+            if (svg) {
+                svg.style.transform = `rotate(${currentHeading}deg)`;
+            } else {
+                const iconDiv = el.querySelector('.marker-icon-inner');
+                if (iconDiv) iconDiv.style.transform = `rotate(${currentHeading}deg)`;
+            }
+        }
+
+        if (t < 1) {
+            markerAnimations[deviceId] = requestAnimationFrame(step);
+        } else {
+            delete markerAnimations[deviceId];
+        }
+    }
+
+    markerAnimations[deviceId] = requestAnimationFrame(step);
 }
 
 // Initialize
@@ -309,65 +358,113 @@ function selectDevice(deviceId) {
 }
 
 // Helper to generate custom marker HTML
-function getMarkerHtml(type, heading, ignitionOn) {
-    let iconContent = VEHICLE_ICONS[type] || '📍';
-    let rotationStyle = '';
+function getMarkerHtml(type, ignitionOn) {
+    let iconContent;
 
     if (type === 'arrow') {
-        // Clear high-contrast SVG arrow
         iconContent = `
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" 
-                 style="transform: rotate(${heading}deg); transition: transform 0.3s; filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.5));">
-                <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" 
+            <svg class="marker-svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+                 xmlns="http://www.w3.org/2000/svg"
+                 style="filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.5));">
+                <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z"
                       fill="#3b82f6" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
-            </svg>
-        `;
+            </svg>`;
     } else {
-        iconContent = `<div style="font-size: 28px;">${iconContent}</div>`;
+        const emoji = VEHICLE_ICONS[type] || '📍';
+        iconContent = `<div class="marker-svg" style="font-size: 28px;">${emoji}</div>`;
     }
 
-    return `
-        <div class="marker-container" style="position: relative; display: flex; align-items: center; justify-content: center;">
-            ${iconContent}
-        </div>
-    `;
+    return `<div class="marker-container" style="position:relative;display:flex;align-items:center;justify-content:center;">${iconContent}</div>`;
 }
 
 // Update Device Marker
 function updateDeviceMarker(deviceId, state) {
     if (!state.last_latitude || !state.last_longitude) return;
-    
-    const position = [state.last_latitude, state.last_longitude];
-    const device = devices.find(d => d.id === deviceId);
+
+    const toLat   = state.last_latitude;
+    const toLng   = state.last_longitude;
+    const toHead  = state.last_course || 0;
+    const device  = devices.find(d => d.id === deviceId);
     const deviceName = device ? device.name : 'Unknown Device';
-    const vehicleIcon = VEHICLE_ICONS[device?.vehicle_type] || '📍';
-    const heading = state.last_course || 0;
-    
-    // FIXED: Updated Popup content to include Coords, Sats, Alt
+
     const popupContent = `
         <strong>${deviceName}</strong><br>
-        Lat: ${state.last_latitude.toFixed(5)}, Lon: ${state.last_longitude.toFixed(5)}<br>
+        Lat: ${toLat.toFixed(5)}, Lon: ${toLng.toFixed(5)}<br>
         Satellites: ${state.satellites || 0} | Alt: ${Math.round(state.last_altitude || 0)}m<br>
         Speed: ${state.last_speed !== undefined ? Number(state.last_speed).toFixed(1) : 0} km/h<br>
         ${state.ignition_on ? '🟢 Ignition ON' : '🔴 Ignition OFF'}<br>
         <small style="color:var(--text-muted);">Updated: ${formatDateToLocal(state.last_update)}</small>
     `;
 
-    const icon = L.divIcon({
-        html: getMarkerHtml(device?.vehicle_type, heading, state.ignition_on),
-        className: 'custom-marker',
-        iconSize: [36, 36],
-        iconAnchor: [18, 18]
-    });
-    
-    if (markers[deviceId]) {
-        markers[deviceId].setLatLng(position);
-        markers[deviceId].setIcon(icon);
-        markers[deviceId].setPopupContent(popupContent);
+    if (!markers[deviceId]) {
+        // ── First appearance: create marker, no animation ──
+        const icon = L.divIcon({
+            html: getMarkerHtml(device?.vehicle_type, state.ignition_on),
+            className: 'custom-marker',
+            iconSize: [36, 36],
+            iconAnchor: [18, 18]
+        });
+        markers[deviceId] = L.marker([toLat, toLng], { icon })
+            .bindPopup(popupContent)
+            .addTo(map);
+
+        // Set initial rotation immediately
+        const el = markers[deviceId].getElement();
+        if (el) {
+            const svg = el.querySelector('.marker-svg');
+            if (svg) svg.style.transform = `rotate(${toHead}deg)`;
+        }
+
+        markerState[deviceId] = { lat: toLat, lng: toLng, heading: toHead };
+
     } else {
-        markers[deviceId] = L.marker(position, { icon }).bindPopup(popupContent).addTo(map);
+        // ── Subsequent updates: animate, never call setIcon ──
+        markers[deviceId].setPopupContent(popupContent);
+
+        const prev = markerState[deviceId] || { lat: toLat, lng: toLng, heading: toHead };
+
+        // Cancel any running animation
+        if (prev.animFrame) cancelAnimationFrame(prev.animFrame);
+
+        const fromLat  = prev.lat;
+        const fromLng  = prev.lng;
+        const fromHead = prev.heading;
+
+        // Shortest-arc heading delta
+        const dH = ((toHead - fromHead + 540) % 360) - 180;
+
+        const duration  = 1000; // ms — tune to match your GPS update interval
+        const startTime = performance.now();
+
+        function step(now) {
+            const t    = Math.min((now - startTime) / duration, 1);
+            // Ease-out cubic
+            const ease = 1 - Math.pow(1 - t, 3);
+
+            const lat  = fromLat  + (toLat  - fromLat)  * ease;
+            const lng  = fromLng  + (toLng  - fromLng)  * ease;
+            const head = fromHead + dH * ease;
+
+            markers[deviceId].setLatLng([lat, lng]);
+
+            // Rotate the inner element directly — no setIcon, no DOM rebuild
+            const el = markers[deviceId].getElement();
+            if (el) {
+                const svg = el.querySelector('.marker-svg');
+                if (svg) svg.style.transform = `rotate(${head}deg)`;
+            }
+
+            if (t < 1) {
+                markerState[deviceId].animFrame = requestAnimationFrame(step);
+            } else {
+                markerState[deviceId] = { lat: toLat, lng: toLng, heading: toHead, animFrame: null };
+            }
+        }
+
+        markerState[deviceId] = { lat: fromLat, lng: fromLng, heading: fromHead, animFrame: requestAnimationFrame(step) };
     }
-    
+
+    // Update devices array
     const deviceIndex = devices.findIndex(d => d.id === deviceId);
     if (deviceIndex !== -1) {
         if (!state.hasOwnProperty('is_online') && state.last_latitude) state.is_online = true;
