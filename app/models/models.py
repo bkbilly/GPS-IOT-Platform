@@ -119,6 +119,10 @@ class DeviceState(Base):
     last_update: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     alert_states: Mapped[Dict] = mapped_column(JSONB, default={})
     sensors: Mapped[Dict] = mapped_column(JSONB, default={})
+    # Trip tracking
+    active_trip_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('trips.id', ondelete='SET NULL'), nullable=True)
+    last_ignition_on: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_ignition_off: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Relationships
     device: Mapped["Device"] = relationship(back_populates="state")

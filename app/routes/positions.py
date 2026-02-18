@@ -2,10 +2,10 @@
 Position Routes
 GPS position history endpoint.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.database import get_db
-from core.auth import verify_device_access
+from core.auth import get_current_user
 from models import User
 from models.schemas import PositionHistoryRequest, PositionHistoryResponse, PositionGeoJSON
 
@@ -15,9 +15,19 @@ router = APIRouter(prefix="/api/positions", tags=["positions"])
 @router.post("/history", response_model=PositionHistoryResponse)
 async def get_position_history(
     request: PositionHistoryRequest,
-    caller: User = Depends(verify_device_access),
+    current_user: User = Depends(get_current_user),
 ):
     db = get_db()
+
+    # Verify the caller has access to the requested device
+    if not current_user.is_admin:
+        user_devices = await db.get_user_devices(current_user.id)
+        if not any(d.id == request.device_id for d in user_devices):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this device",
+            )
+
     positions = await db.get_position_history(
         request.device_id, request.start_time, request.end_time,
         request.max_points, request.order

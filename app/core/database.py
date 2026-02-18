@@ -115,7 +115,7 @@ class DatabaseService:
             state = await self._get_or_create_state(session, device.id)
             
             distance_km = 0.0
-            if state.last_position:
+            if state.last_latitude:
                 distance_km = await self._calculate_distance(
                     session, state.last_latitude, state.last_longitude,
                     position.latitude, position.longitude
@@ -127,7 +127,6 @@ class DatabaseService:
             if state.active_trip_id:
                 state.trip_odometer += distance_km
             
-            state.last_position = f'SRID=4326;POINT({position.longitude} {position.latitude})'
             state.last_latitude = position.latitude
             state.last_longitude = position.longitude
             state.last_altitude = position.altitude
@@ -141,19 +140,17 @@ class DatabaseService:
             
             position_record = PositionRecord(
                 device_id=device.id,
-                position=f'SRID=4326;POINT({position.longitude} {position.latitude})',
                 latitude=position.latitude,
                 longitude=position.longitude,
                 altitude=position.altitude,
                 speed=position.speed,
                 course=position.course,
                 satellites=position.satellites,
-                hdop=position.hdop,
                 ignition=position.ignition,
                 sensors=position.sensors,
                 device_time=device_time,
-                server_time=datetime.utcnow()
             )
+
             
             session.add(position_record)
             await session.flush()
@@ -421,8 +418,8 @@ class DatabaseService:
             alert = AlertHistory(
                 user_id=alert_data.user_id,
                 device_id=alert_data.device_id,
-                alert_type=alert_data.alert_type.value,
-                severity=alert_data.severity.value,
+                alert_type=alert_data.alert_type,
+                severity=alert_data.severity,
                 message=alert_data.message,
                 latitude=alert_data.latitude,
                 longitude=alert_data.longitude,

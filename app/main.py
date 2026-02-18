@@ -15,6 +15,9 @@ import redis.asyncio as redis
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
 
 from core.config import get_settings
 from core.database import get_db, init_database
@@ -24,6 +27,7 @@ from models import Device, AlertHistory
 from models.schemas import NormalizedPosition, WSMessageType
 from protocols import ProtocolRegistry
 from routes import ROUTE_REGISTRY
+from core.push_notifications import get_push_service
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +143,8 @@ async def process_position_callback(position: NormalizedPosition):
         await ws_manager.broadcast_position_update(position, device)
         logger.debug(f"Position processed: {device.name}")
     except Exception as e:
+        logger.error(f"Position processing error: {e}", exc_info=True)                    
+    except Exception as e:
         logger.error(f"Position processing error: {e}", exc_info=True)
 
 
@@ -229,22 +235,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Mount all auto-discovered routers
 for router in ROUTE_REGISTRY:
     app.include_router(router)
+
+@app.get("/api/protocols")
+async def get_protocols():
+    return {
+        "protocols": ProtocolRegistry.list_protocols(),
+        "online_devices": len(connection_manager.connections),
+    }
 
 
 # ==================== Root + WebSocket ====================
 
 @app.get("/")
 async def root():
-    return {
-        "status": "online",
-        "version": "1.0.0",
-        "protocols": ProtocolRegistry.list_protocols(),
-        "online_devices": len(connection_manager.connections),
-    }
+    return FileResponse("web/gps-dashboard.html")
 
+@app.get("/login.html")
+async def login_page():
+    return FileResponse("web/login.html")
+
+@app.get("/device-management.html")
+async def devices_page():
+    return FileResponse("web/device-management.html")
+
+@app.get("/user-settings.html")
+async def settings_page():
+    return FileResponse("web/user-settings.html")
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: int):
@@ -282,6 +302,9 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
         await r.close()
         ws_manager.disconnect(user_id, websocket)
 
+
+# Static mount MUST be last — after all routes and websockets
+app.mount("/", StaticFiles(directory="web"), name="static")
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

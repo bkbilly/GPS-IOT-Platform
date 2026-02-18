@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # Allow unknown .env keys (e.g. vapid_*, custom app keys)
 
 
 # Global settings instance

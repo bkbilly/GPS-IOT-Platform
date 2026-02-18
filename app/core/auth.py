@@ -44,26 +44,28 @@ async def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
-def require_self_or_admin():
+async def require_self_or_admin(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+) -> User:
     """
-    Dependency factory: allows access only if the caller IS the target user
-    or is an admin. Expects `user_id` as a path parameter on the endpoint.
+    Dependency: allows access only if the caller IS the target user or is an admin.
+    Expects `user_id` as a path parameter on the endpoint.
+
+    Usage: caller: User = Depends(require_self_or_admin)
     """
-    async def dependency(
-        user_id: int,
-        current_user: User = Depends(get_current_user),
-    ) -> User:
-        if not current_user.is_admin and current_user.id != user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to access this resource",
-            )
-        return current_user
-
-    return Depends(dependency)
+    if not current_user.is_admin and current_user.id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access this resource",
+        )
+    return current_user
 
 
-async def verify_device_access(device_id: int, current_user: User = Depends(get_current_user)) -> User:
+async def verify_device_access(
+    device_id: int,
+    current_user: User = Depends(get_current_user),
+) -> User:
     """
     Verify the current user has access to a given device.
     Admins always pass. Regular users must have the device in their association.

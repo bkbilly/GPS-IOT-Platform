@@ -41,7 +41,7 @@ async def create_user(user_data: UserCreate, admin: User = Depends(require_admin
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-async def get_user(user_id: int, caller: User = Depends(require_self_or_admin())):
+async def get_user(user_id: int, caller: User = Depends(require_self_or_admin)):
     db = get_db()
     user = await db.get_user(user_id)
     if not user:
@@ -53,7 +53,7 @@ async def get_user(user_id: int, caller: User = Depends(require_self_or_admin())
 async def update_user(
     user_id: int,
     user_data: UserUpdate,
-    caller: User = Depends(require_self_or_admin()),
+    caller: User = Depends(require_self_or_admin),
 ):
     """Update user details. Non-admins cannot change their own is_admin flag."""
     # Prevent privilege escalation by non-admins

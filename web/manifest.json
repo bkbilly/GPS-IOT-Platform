@@ -1,0 +1,37 @@
+{
+  "name": "GPS Tracking Dashboard",
+  "short_name": "GPS Tracker",
+  "description": "Real-time GPS device tracking and alerts",
+  "start_url": "/gps-dashboard.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#3b82f6",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["navigation", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "url": "/gps-dashboard.html",
+      "description": "Open live map dashboard"
+    },
+    {
+      "name": "Devices",
+      "url": "/device-management.html",
+      "description": "Manage tracked devices"
+    }
+  ]
+}

@@ -59,8 +59,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function loadAvailableProtocols() {
     try {
-        const baseUrl = API_BASE.replace('/api', '');
-        const res     = await apiFetch(`${baseUrl}/`);
+        const res = await apiFetch(`${API_BASE}/protocols`);
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
         const data         = await res.json();
         availableProtocols = data.protocols || [];

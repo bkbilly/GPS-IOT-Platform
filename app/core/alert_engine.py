@@ -16,6 +16,7 @@ from models import Device, DeviceState, User, AlertHistory
 from models.schemas import AlertCreate, AlertType, Severity, NormalizedPosition
 from core.database import get_db
 from alerts import ALERT_REGISTRY
+from core.push_notifications import get_push_service
 
 
 logger = logging.getLogger(__name__)
@@ -75,57 +76,57 @@ class AlertEngine:
             return False
         return True
 
-async def process_position_alerts(self, position, device, state):
-    try:
-        users = device.users
-        if not users:
-            return
+    async def process_position_alerts(self, position, device, state):
+        try:
+            users = device.users
+            if not users:
+                return
 
-        if state.alert_states is None:
-            state.alert_states = {}
+            if state.alert_states is None:
+                state.alert_states = {}
 
-        from alerts import ALERT_REGISTRY
+            from alerts import ALERT_REGISTRY
 
-        alerts = []
-        alert_rows = device.config.get("alert_rows", [])
+            alerts = []
+            alert_rows = device.config.get("alert_rows", [])
 
-        for row in alert_rows:
-            if not isinstance(row, dict):
-                continue
+            for row in alert_rows:
+                if not isinstance(row, dict):
+                    continue
 
-            alert_key = row.get("alertKey")
-            if not alert_key or alert_key == "__custom__":
-                continue
+                alert_key = row.get("alertKey")
+                if not alert_key or alert_key == "__custom__":
+                    continue
 
-            alert_cls = ALERT_REGISTRY.get(alert_key)
-            if not alert_cls:
-                continue
+                alert_cls = ALERT_REGISTRY.get(alert_key)
+                if not alert_cls:
+                    continue
 
-            # Schedule check (unchanged from before)
-            if not self._is_alert_active(alert_key, device):
-                continue
+                # Schedule check (unchanged from before)
+                if not self._is_alert_active(alert_key, device):
+                    continue
 
-            # Params dict (new — replaces single `value` field)
-            params = row.get("params", {})
+                # Params dict (new — replaces single `value` field)
+                params = row.get("params", {})
 
-            results = await alert_cls().check_many(position, device, state, params)
-            alerts.extend(results)
+                results = await alert_cls().check_many(position, device, state, params)
+                alerts.extend(results)
 
-        # Custom rules (unchanged)
-        custom_alerts = await self._check_custom_rules(position, device, state)
-        alerts.extend(custom_alerts)
+            # Custom rules (unchanged)
+            custom_alerts = await self._check_custom_rules(position, device, state)
+            alerts.extend(custom_alerts)
 
-        if state.alert_states is not None:
-            db = get_db()
-            await db.update_device_alert_state(device.id, state.alert_states)
+            if state.alert_states is not None:
+                db = get_db()
+                await db.update_device_alert_state(device.id, state.alert_states)
 
-        for alert_data in alerts:
-            alert_data.setdefault("latitude",  position.latitude)
-            alert_data.setdefault("longitude", position.longitude)
-            await self._dispatch_alert(users, device, alert_data)
+            for alert_data in alerts:
+                alert_data.setdefault("latitude",  position.latitude)
+                alert_data.setdefault("longitude", position.longitude)
+                await self._dispatch_alert(users, device, alert_data)
 
-    except Exception as e:
-        logger.error(f"Alert processing error: {e}")
+        except Exception as e:
+            logger.error(f"Alert processing error: {e}")
 
     async def _dispatch_alert(self, users: List[User], device: Device, alert_data: Dict[str, Any]):
         """
@@ -231,6 +232,16 @@ async def process_position_alerts(self, position, device, state):
                 title = f"🚗 {device.name} - {alert_data['type'].value.upper()}"
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(self.executor, self._send_apprise_notification, urls, title, alert_data['message'])
+            push = get_push_service()
+            await push.notify_user(
+                db_service=get_db(),
+                user_id=user.id,
+                alert_type=alert_data['type'].value,
+                message=alert_data['message'],
+                severity=alert_data.get('severity', 'info'),
+                device_name=device.name,
+            )
+
         except Exception as e: 
             logger.error(f"Notify error: {e}")
     

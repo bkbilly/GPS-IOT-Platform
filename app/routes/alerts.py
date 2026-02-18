@@ -62,17 +62,30 @@ async def get_alerts(
     return await db.get_user_alerts(current_user.id)
 
 
+async def _get_alert_owned(alert_id: int, current_user: User):
+    """Fetch alert and verify ownership. Raises 404/403 as appropriate."""
+    from sqlalchemy import select
+    from models import AlertHistory
+    db = get_db()
+    async with db.get_session() as session:
+        result = await session.execute(
+            select(AlertHistory).where(AlertHistory.id == alert_id)
+        )
+        alert = result.scalar_one_or_none()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    if not current_user.is_admin and alert.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return alert
+
+
 @router.post("/{alert_id}/read")
 async def mark_alert_read(
     alert_id: int,
     current_user: User = Depends(get_current_user),
 ):
+    await _get_alert_owned(alert_id, current_user)
     db = get_db()
-    alert = await db.get_alert_by_id(alert_id)
-    if not alert:
-        raise HTTPException(status_code=404, detail="Alert not found")
-    if not current_user.is_admin and alert.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Forbidden")
     success = await db.mark_alert_read(alert_id)
     if not success:
         raise HTTPException(status_code=404, detail="Alert not found")
@@ -84,12 +97,8 @@ async def delete_alert(
     alert_id: int,
     current_user: User = Depends(get_current_user),
 ):
+    await _get_alert_owned(alert_id, current_user)
     db = get_db()
-    alert = await db.get_alert_by_id(alert_id)
-    if not alert:
-        raise HTTPException(status_code=404, detail="Alert not found")
-    if not current_user.is_admin and alert.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Forbidden")
     success = await db.delete_alert(alert_id)
     if not success:
         raise HTTPException(status_code=404, detail="Alert not found")
