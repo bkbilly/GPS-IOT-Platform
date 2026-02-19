@@ -61,10 +61,16 @@
                     <button class="sidebar-close-btn" onclick="exitHistoryMode()" title="Close History" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer;">✕</button>
                 </div>
                 <div id="pointDetailsContent"></div>
+                <div id="tripsSection" style="margin-top: 1.25rem;">
+                    <h4 style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.07em;
+                               color:var(--text-muted); margin-bottom:0.75rem;">Trips in Range</h4>
+                    <div id="tripListContent"></div>
+                </div>
+
             </div>
             
             <!-- New Sidebar Footer for App Navigation -->
-            <div class="sidebar-footer">
+            <div class="sidebar-footer" id="sidebarNavRow">
                 <div class="sidebar-row">
                     <a href="device-management.html" class="sidebar-action-btn" title="Manage Devices">
                         <span class="sidebar-action-icon">⚙️</span>
@@ -81,7 +87,7 @@
                     <span class="sidebar-action-icon">🔔</span>
                 </button>
 
-                <div class="user-profile">
+                <div class="user-profile" id="sidebarUserProfile">
                     <div class="user-info">
                         <span class="user-name" id="userNameDisplay">User</span>
                         <span class="user-role" id="userRoleDisplay">User</span>
@@ -95,18 +101,19 @@
             <div id="map"></div>
             <!-- Floating History Controls (Shown when history is active) -->
             <div id="historyControls" class="history-controls" style="display: none;">
+                <!-- Row 1: timestamp · trip pill · close -->
                 <div class="history-controls-top">
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <span style="font-weight: 600; color: var(--accent-primary);">History Mode</span>
-                        <span id="historyTimestamp" class="history-time">--:--:--</span>
-                    </div>
-                    <div class="btn-group">
-                        <button class="btn-icon" onclick="stepHistory(-1)" title="Previous Event">⏮</button>
-                        <button class="btn-icon" onclick="togglePlayback()" id="playbackBtn" title="Play/Pause">▶️</button>
-                        <button class="btn-icon" onclick="stepHistory(1)" title="Next Event">⏭</button>
-                        <button class="btn-icon" onclick="exitHistoryMode()" title="Exit History" style="margin-left: 0.5rem; background: var(--bg-hover);">✕</button>
-                    </div>
+                    <span id="historyTimestamp" class="history-time">--:--:--</span>
+                    <span id="historyTripLabel" class="history-trip-label"></span>
+                    <button class="history-close-btn" onclick="exitHistoryMode()" title="Exit History">✕</button>
                 </div>
+                <!-- Row 2: playback buttons -->
+                <div class="history-controls-buttons">
+                    <button class="btn-icon" onclick="stepHistory(-1)" title="Previous Event">⏮</button>
+                    <button class="btn-icon btn-icon-play" onclick="togglePlayback()" id="playbackBtn" title="Play/Pause">▶️</button>
+                    <button class="btn-icon" onclick="stepHistory(1)" title="Next Event">⏭</button>
+                </div>
+                <!-- Row 3: slider -->
                 <input type="range" class="history-slider" id="historySlider" min="0" max="100" value="0" oninput="seekHistory(this.value)">
             </div>
         </main>

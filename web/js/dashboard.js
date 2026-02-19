@@ -25,6 +25,7 @@ let selectedDevice = null;
 let historyDeviceId = null;
 let playbackInterval = null;
 let historyData = [];
+let historyTrips = [];
 let historyIndex = 0;
 let loadedAlerts = [];
 let currentUser = null;
@@ -41,6 +42,16 @@ function formatDateToLocal(dateString) {
         dateString += 'Z';
     }
     return new Date(dateString).toLocaleString();
+}
+
+// Helper to format duration in minutes to "Xh Ym" format
+function formatDuration(minutes) {
+    if (!minutes || minutes <= 0) return '0 min';
+    const h = Math.floor(minutes / 60);
+    const m = Math.round(minutes % 60);
+    if (h === 0) return `${m} min`;
+    if (m === 0) return `${h}h`;
+    return `${h}h ${m}min`;
 }
 
 // Helper to format time ago (human readable)
@@ -135,6 +146,16 @@ function getVehicleStatus(device) {
     if (!device.ignition_on) return { emoji: '🔴', label: 'Stopped', key: 1 };
     if ((device.last_speed || 0) < 3) return { emoji: '🟠', label: 'Idling', key: 2 };
     return { emoji: '🟢', label: 'Moving', key: 3 };
+}
+
+function getCurrentTripForPoint(isoTimeStr) {
+    if (!historyTrips.length || !isoTimeStr) return null;
+    const t = new Date(isoTimeStr).getTime();
+    return historyTrips.find((trip, i) => {
+        const start = new Date(trip.start_time).getTime();
+        const end   = trip.end_time ? new Date(trip.end_time).getTime() : Infinity;
+        return t >= start && t <= end;
+    }) || null;
 }
 
 function setSortMode(mode) {
@@ -301,6 +322,81 @@ async function loadDeviceState(deviceId) {
         console.error(`Error loading state for device ${deviceId}:`, error);
     }
 }
+
+// Load Trips for History Modal
+async function loadTripsForHistory(deviceId, startTime, endTime) {
+    const container = document.getElementById('tripListContent');
+    if (!container) return;
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.5rem 0;text-align:center;">Loading trips…</div>';
+
+    try {
+        const res = await apiFetch(
+            `${API_BASE}/devices/${deviceId}/trips?start_date=${startTime.toISOString()}&end_date=${endTime.toISOString()}`
+        );
+        if (!res.ok) throw new Error('Failed to fetch trips');
+        const trips = await res.json();
+        historyTrips = trips;
+
+        if (!trips.length) {
+            container.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.5rem 0;text-align:center;">No trips detected in this period</div>';
+            return;
+        }
+
+        container.innerHTML = trips.map((trip, i) => {
+            const start = trip.start_time ? formatDateToLocal(trip.start_time) : '—';
+            const end   = trip.end_time   ? formatDateToLocal(trip.end_time)   : 'Ongoing';
+            const dist  = trip.distance_km != null ? `${trip.distance_km.toFixed(1)} km` : '—';
+            const dur   = formatDuration(trip.duration_minutes);
+            const from  = trip.start_address || 'Unknown start';
+            const to    = trip.end_address   || (trip.end_time ? 'Unknown end' : 'In progress');
+
+            return `
+            <div class="trip-card" onclick="seekToTrip('${trip.start_time}')" title="Click to jump to this trip">
+                <div class="trip-card-header">
+                    <span class="trip-index">Trip ${i + 1}</span>
+                    <span class="trip-badges">
+                        <span class="trip-badge">📍 ${dist}</span>
+                        <span class="trip-badge">⏱ ${dur}</span>
+                    </span>
+                </div>
+                <div class="trip-card-body">
+                    <div class="trip-row">
+                        <span class="trip-label">From</span>
+                        <span class="trip-value">${from}</span>
+                    </div>
+                    <div class="trip-row">
+                        <span class="trip-label">To</span>
+                        <span class="trip-value">${to}</span>
+                    </div>
+                    <div class="trip-time">${start} → ${end}</div>
+                </div>
+            </div>`;
+        }).join('');
+
+    } catch (e) {
+        historyTrips = [];
+        container.innerHTML = '<div style="color:var(--accent-danger);font-size:0.8rem;padding:0.5rem 0;">Failed to load trips</div>';
+    }
+}
+
+function seekToTrip(startTimeStr) {
+    if (!historyData.length) return;
+    const target = new Date(startTimeStr).getTime();
+    let closest = 0;
+    let closestDiff = Infinity;
+    historyData.forEach((f, idx) => {
+        const diff = Math.abs(new Date(f.properties.time).getTime() - target);
+        if (diff < closestDiff) { closestDiff = diff; closest = idx; }
+    });
+    historyIndex = closest;
+    stopPlayback();
+    updatePlaybackUI();
+    map.panTo([
+        historyData[closest].geometry.coordinates[1],
+        historyData[closest].geometry.coordinates[0]
+    ]);
+}
+
 
 // Render Device List
 function renderDeviceList() {
@@ -650,14 +746,20 @@ async function loadHistory(deviceId, startTime, endTime) {
         
         // Hide regular list
         document.getElementById('sidebarDeviceList').style.display = 'none';
-        
+        document.getElementById('sidebarNavRow').style.display = 'none';
+        document.getElementById('sidebarUserProfile').style.display = 'none';
+
         // Show History Details section
         document.getElementById('sidebarHistoryDetails').style.display = 'block';
         
         const device = devices.find(d => d.id === deviceId);
         document.getElementById('historyDeviceName').textContent = device ? device.name : 'History Details';
+        await loadTripsForHistory(deviceId, startTime, endTime);
         updatePlaybackUI();
-    } catch (error) { showAlert({ title: 'Error', message: 'Failed to load history.', type: 'error' }); }
+    } catch (error) {
+        console.log(error);
+        showAlert({ title: 'Error', message: 'Failed to load history.', type: 'error' });
+    }
 }
 
 function exitHistoryMode() {
@@ -680,7 +782,14 @@ function exitHistoryMode() {
     const footer = document.getElementById('historyControls');
     if (footer) footer.style.display = 'none';
 
+    historyTrips = [];
+    const tripLabel = document.getElementById('historyTripLabel');
+    if (tripLabel) tripLabel.textContent = '';
+    const tripList = document.getElementById('tripListContent');
+    if (tripList) tripList.innerHTML = '';
     document.getElementById('sidebarDeviceList').style.display = 'block';
+    document.getElementById('sidebarNavRow').style.display = 'flex';
+    document.getElementById('sidebarUserProfile').style.display = 'flex';
     document.getElementById('sidebarHistoryDetails').style.display = 'none';
 }
 
@@ -730,6 +839,25 @@ function updatePlaybackUI() {
     })).bindPopup(`<strong>${time}</strong><br>Speed: ${p.speed} km/h<br>Alt: ${p.altitude} m`);
     
     updatePointDetails(feature);
+
+    // Trip label in floating controls
+    const tripLabel = document.getElementById('historyTripLabel');
+    const currentTrip = getCurrentTripForPoint(p.time);
+    if (tripLabel) {
+        if (currentTrip) {
+            const tripIndex = historyTrips.indexOf(currentTrip) + 1;
+            const dist = currentTrip.distance_km != null ? ` · ${currentTrip.distance_km.toFixed(1)} km` : '';
+            tripLabel.textContent = `Trip ${tripIndex}${dist}`;
+        } else {
+            tripLabel.textContent = historyTrips.length ? 'Between trips' : '';
+        }
+    }
+
+    // Highlight active trip card in sidebar
+    document.querySelectorAll('.trip-card').forEach((card, i) => {
+        const isActive = currentTrip && historyTrips.indexOf(currentTrip) === i;
+        card.classList.toggle('trip-card-active', isActive);
+    });
 }
 
 function updatePointDetails(feature) {

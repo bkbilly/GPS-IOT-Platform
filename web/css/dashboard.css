@@ -561,13 +561,6 @@ body::before {
     transform: scale(1.05);
 }
 
-.history-controls-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-}
-
 .history-slider {
     width: 100%;
     height: 6px;
@@ -876,17 +869,83 @@ body::before {
     left: 50%;
     transform: translateX(-50%);
     z-index: 1000;
-    background: rgba(31, 41, 55, 0.95);
-    backdrop-filter: blur(12px);
+    background: rgba(19, 24, 37, 0.97);
+    backdrop-filter: blur(16px);
     border: 1px solid var(--border-color);
-    border-radius: 20px;
-    padding: 1rem 1.5rem;
+    border-radius: 16px;
+    padding: 0.875rem 1.25rem;
     box-shadow: var(--shadow-lg);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    min-width: 400px;
+    gap: 0.6rem;
+    width: 80%;
     animation: slideUp 0.3s ease-out;
+}
+
+/* Row 1 */
+.history-controls-top {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.history-trip-label {
+    flex: 1;
+    text-align: center;
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 5px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    color: var(--accent-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 80px;
+}
+
+.history-close-btn {
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: all var(--transition-fast);
+}
+
+.history-close-btn:hover {
+    background: var(--accent-danger);
+    border-color: var(--accent-danger);
+    color: white;
+}
+
+/* Row 2 */
+.history-controls-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.btn-icon-play {
+    width: 44px !important;
+    height: 44px !important;
+    font-size: 1.1rem !important;
+    background: var(--accent-primary) !important;
+    border-color: var(--accent-primary) !important;
+}
+
+.btn-icon-play:hover {
+    background: #2563eb !important;
+    border-color: #2563eb !important;
 }
 
 .history-time {
@@ -962,3 +1021,101 @@ body::before {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+
+/* ── Trip Cards ──────────────────────────────────────────────── */
+
+.trip-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0.75rem;
+    margin-bottom: 0.6rem;
+    cursor: pointer;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.trip-card:hover {
+    border-color: var(--accent-primary);
+    background: var(--bg-hover);
+}
+
+.trip-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.trip-index {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--accent-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.trip-badges {
+    display: flex;
+    gap: 0.35rem;
+}
+
+.trip-badge {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 5px;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+}
+
+.trip-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.trip-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: baseline;
+    font-size: 0.8rem;
+}
+
+.trip-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    min-width: 2.5rem;
+    flex-shrink: 0;
+}
+
+.trip-value {
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+}
+
+.trip-time {
+    margin-top: 0.35rem;
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+}
+
+.trip-card-active {
+    border-color: var(--accent-primary) !important;
+    background: rgba(59, 130, 246, 0.08) !important;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.trip-card-active .trip-index {
+    color: var(--accent-primary);
+}
+
