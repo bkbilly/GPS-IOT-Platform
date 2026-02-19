@@ -1,51 +1,24 @@
 """
 Push Notification Service (Web Push / VAPID)
 File location: app/core/push_notifications.py
-
-Sends browser push notifications when alerts are triggered.
-Integrates with the existing AlertEngine._send_notification pipeline.
-
-Setup:
-    1. Install dependency:
-           pip install pywebpush
-
-    2. Generate VAPID keys (run once):
-           npx web-push generate-vapid-keys
-       OR (Python):
-           python -c "
-           from py_vapid import Vapid
-           v = Vapid(); v.generate_keys()
-           print('Public: ', v.public_key)
-           print('Private:', v.private_key)
-           "
-
-    3. Add to your .env:
-           VAPID_PRIVATE_KEY=<your_private_key>
-           VAPID_PUBLIC_KEY=<your_public_key>
-           VAPID_MAILTO=mailto:admin@yourdomain.com
-
-    4. Copy VAPID_PUBLIC_KEY into /web/js/pwa.js  →  VAPID_PUBLIC_KEY constant.
 """
 
 import json
 import logging
-import os
 from typing import Optional
 
 from sqlalchemy import select, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from models.models import Base
-from sqlalchemy import Column, Integer, DateTime, ForeignKey
+from sqlalchemy import Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
+from core.config import get_settings
 
-VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
-VAPID_PUBLIC_KEY  = os.getenv("VAPID_PUBLIC_KEY", "")
-VAPID_MAILTO      = os.getenv("VAPID_MAILTO", "mailto:admin@example.com")
+logger = logging.getLogger(__name__)
 
 
 # ── SQLAlchemy Model ──────────────────────────────────────────────
@@ -64,35 +37,25 @@ class PushSubscription(Base):
 # ── Service ───────────────────────────────────────────────────────
 
 class PushNotificationService:
-    """
-    Sends Web Push notifications to subscribed browser/PWA clients.
-
-    Usage inside AlertEngine._send_notification:
-
-        push_service = get_push_service()
-        await push_service.notify_user(
-            db_service=db,
-            user_id=user.id,
-            alert_type="speed_alert",
-            message="Vehicle exceeded 120 km/h",
-            severity="high",
-            device_name="Truck #1",
-        )
-    """
+    """Sends Web Push notifications to subscribed browser/PWA clients."""
 
     def __init__(self):
-        if not VAPID_PRIVATE_KEY:
+        settings = get_settings()
+        self._private_key = getattr(settings, 'vapid_private_key', '')
+        self._public_key  = getattr(settings, 'vapid_public_key', '')
+        self._mailto      = getattr(settings, 'vapid_mailto', 'mailto:admin@example.com')
+        if not self._private_key:
             logger.warning("[Push] VAPID keys not configured — push notifications disabled")
 
     @property
     def _enabled(self) -> bool:
-        return bool(VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY)
+        return bool(self._private_key and self._public_key)
 
     # ── Public API ────────────────────────────────────────────────
 
     async def notify_user(
         self,
-        db_service,           # DatabaseService instance from app/core/database.py
+        db_service,
         user_id: int,
         alert_type: str,
         message: str,
@@ -100,14 +63,11 @@ class PushNotificationService:
         device_name: Optional[str] = None,
         alert_id: Optional[int] = None,
     ) -> bool:
-        """Look up the user's subscription and send a push notification."""
         if not self._enabled:
             return False
-
         subscription = await self._get_subscription(db_service, user_id)
         if not subscription:
             return False
-
         return await self._send(
             subscription=subscription,
             alert_type=alert_type,
@@ -118,7 +78,6 @@ class PushNotificationService:
         )
 
     async def save_subscription(self, db_service, user_id: int, subscription: dict):
-        """Upsert a browser push subscription for the given user."""
         async with db_service.get_session() as session:
             stmt = pg_insert(PushSubscription).values(
                 user_id=user_id,
@@ -131,7 +90,6 @@ class PushNotificationService:
             await session.execute(stmt)
 
     async def remove_subscription(self, db_service, user_id: int):
-        """Remove a user's push subscription."""
         async with db_service.get_session() as session:
             await session.execute(
                 delete(PushSubscription).where(PushSubscription.user_id == user_id)
@@ -179,8 +137,8 @@ class PushNotificationService:
             webpush(
                 subscription_info=subscription,
                 data=payload,
-                vapid_private_key=VAPID_PRIVATE_KEY,
-                vapid_claims={"sub": VAPID_MAILTO},
+                vapid_private_key=self._private_key,
+                vapid_claims={"sub": self._mailto},
             )
             logger.info(f"[Push] Sent: {title}")
             return True

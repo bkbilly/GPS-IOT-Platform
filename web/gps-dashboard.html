@@ -165,6 +165,7 @@
 
     <!-- Custom Scripts -->
     <script src="js/config.js"></script>
+    <script src="js/pwa.js"></script>
     <script src="js/dashboard.js"></script>
     
     <script>
@@ -179,6 +180,7 @@
             if (window.innerWidth <= 1024) {
                 document.querySelector('.dashboard').classList.add('sidebar-hidden');
             }
+            initPWA();
         });
 
         // Add resize listener to handle dynamic window resizing

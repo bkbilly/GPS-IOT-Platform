@@ -48,7 +48,12 @@ class Settings(BaseSettings):
     enable_websockets: bool = True
     enable_notifications: bool = True
     enable_command_queue: bool = True
-    
+
+    # Push Notifications (VAPID)
+    vapid_private_key: str = ""
+    vapid_public_key: str = ""
+    vapid_mailto: str = "mailto:admin@example.com"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
