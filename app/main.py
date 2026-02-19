@@ -6,6 +6,7 @@ All REST routes live in app/routes/.
 import asyncio
 import json
 import logging
+import signal
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, List, Optional, Any
@@ -53,9 +54,9 @@ class RedisPubSub:
 
     async def close(self):
         if self.pubsub:
-            await self.pubsub.close()
+            await self.pubsub.aclose()
         if self.redis_client:
-            await self.redis_client.close()
+            await self.redis_client.aclose()
 
 
 redis_pubsub = RedisPubSub()
@@ -279,13 +280,19 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
             await pubsub.subscribe(*device_channels)
 
         async def listen_to_redis():
-            async for message in pubsub.listen():
-                if message["type"] == "message":
-                    try:
-                        await websocket.send_text(message["data"])
-                    except Exception as e:
-                        logger.error(f"WS Send Error: {e}")
-                        break
+            try:
+                async for message in pubsub.listen():
+                    if message["type"] == "message":
+                        try:
+                            await websocket.send_text(message["data"])
+                        except Exception as e:
+                            logger.error(f"WS Send Error: {e}")
+                            break
+            except asyncio.CancelledError:
+                pass  # Graceful shutdown, nothing to do
+            finally:
+                await pubsub.unsubscribe()
+                await pubsub.aclose()
 
         async def listen_to_client():
             try:
@@ -294,18 +301,45 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
             except WebSocketDisconnect:
                 pass
 
-        await asyncio.gather(listen_to_redis(), listen_to_client())
+        try:
+            await asyncio.gather(listen_to_redis(), listen_to_client())
+        except asyncio.CancelledError:
+                pass
+        finally:
+            # any websocket cleanup here
+            logger.info(f"WebSocket disconnected for user {user_id}")
+
     except Exception as e:
         logger.error(f"WebSocket Error: {e}")
     finally:
-        await pubsub.close()
-        await r.close()
+        await pubsub.aclose()
+        await r.aclose()
         ws_manager.disconnect(user_id, websocket)
 
 
 # Static mount MUST be last — after all routes and websockets
 app.mount("/", StaticFiles(directory="web"), name="static")
 
+
+def run_server():
+    server = uvicorn.Server(uvicorn.Config(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        loop="uvloop",
+        timeout_graceful_shutdown=2,
+    ))
+
+    
+    def handle_exit(*args):
+        server.should_exit = True
+    
+    signal.signal(signal.SIGINT, handle_exit)
+    signal.signal(signal.SIGTERM, handle_exit)
+    
+    server.run()
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False, workers=1, loop="uvloop")
+    run_server()
