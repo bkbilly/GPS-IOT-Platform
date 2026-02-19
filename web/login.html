@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - GPS Fleet Tracker</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="manifest" href="/manifest.json">
     <style>
         :root {
             --bg-primary: #0a0e1a;
@@ -95,10 +96,8 @@
             <div class="error-msg" id="errorMsg">Invalid credentials</div>
         </form>
     </div>
-
+    <script src="js/config.js"></script>
     <script>
-        const API_BASE = 'http://localhost:8000/api';
-
         async function handleLogin(e) {
             e.preventDefault();
             const btn = document.getElementById('loginBtn');
