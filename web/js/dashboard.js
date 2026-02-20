@@ -32,7 +32,14 @@ let currentUser = null;
 const markerAnimations = {};
 const markerState = {};
 let currentSort = localStorage.getItem('vehicleSortMode') || 'name';
+let sensorChart = null;
+let selectedSensorAttrs = new Set(['speed']);   // default selection
+let currentHistoryTab = 'details';
 
+const SENSOR_COLORS = [
+    '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
+    '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'
+];
 
 
 // Helper to format dates to local time for display
@@ -765,6 +772,10 @@ function exitHistoryMode() {
         map.removeLayer(markers['history_pos']);
         delete markers['history_pos'];
     }
+    if (sensorChart) { sensorChart.destroy(); sensorChart = null; }
+    selectedSensorAttrs = new Set(['speed']);
+    currentHistoryTab = 'details';
+    switchHistoryTab('details');
     
     // FIXED: Restore live marker when exiting history mode
     if (markers[historyDeviceId]) {
@@ -819,6 +830,8 @@ function updatePlaybackUI() {
     const heading = p.course || 0;
     const device = devices.find(d => d.id === historyDeviceId);
 
+    buildSensorAttrList();
+    updateSensorChartCursor(historyIndex);
     document.getElementById('historySlider').value = historyIndex;
     document.getElementById('historyTimestamp').textContent = time;
     
@@ -1075,4 +1088,255 @@ function filterDevices() {
             card.style.display = 'none';
         }
     });
+}
+
+// ── Tab switcher ───────────────────────────────────────────────
+function switchHistoryTab(tab) {
+    currentHistoryTab = tab;
+    document.getElementById('tabDetails').style.display = tab === 'details' ? 'block' : 'none';
+    document.getElementById('tabGraph').style.display   = tab === 'graph'   ? 'block' : 'none';
+    document.getElementById('tabBtnDetails').classList.toggle('active', tab === 'details');
+    document.getElementById('tabBtnGraph').classList.toggle('active', tab === 'graph');
+    if (tab === 'graph') renderSensorGraph();
+}
+
+// ── Build attribute list from all historyData ──────────────────
+function buildSensorAttrList() {
+    if (!historyData || historyData.length === 0) return;
+
+    // Collect all numeric keys across all points
+    const attrSet = new Set();
+
+    // Always include core fields if they are numeric
+    const coreFields = ['speed', 'altitude', 'course', 'satellites'];
+    coreFields.forEach(f => attrSet.add(f));
+
+    historyData.forEach(feat => {
+        const p = feat.properties;
+        // Add sensor sub-keys
+        if (p.sensors) {
+            Object.entries(p.sensors).forEach(([k, v]) => {
+                if (k !== 'raw' && !isNaN(parseFloat(v))) attrSet.add('sensors.' + k);
+            });
+        }
+    });
+
+    const container = document.getElementById('sensorAttrList');
+    container.innerHTML = '';
+
+    let colorIdx = 0;
+    attrSet.forEach(attr => {
+        const color = SENSOR_COLORS[colorIdx % SENSOR_COLORS.length];
+        colorIdx++;
+
+        const chip = document.createElement('button');
+        chip.className = 'sensor-chip' + (selectedSensorAttrs.has(attr) ? ' selected' : '');
+        chip.dataset.attr = attr;
+        chip.dataset.color = color;
+        chip.style.setProperty('--chip-color', color);
+        chip.textContent = formatAttrLabel(attr);
+        chip.onclick = () => toggleSensorAttr(attr, chip);
+        container.appendChild(chip);
+    });
+
+    renderSensorGraph();
+}
+
+function buildSensorAttrList() {
+    if (!historyData || historyData.length === 0) return;
+
+    // Collect all numeric keys across all points
+    const attrSet = new Set();
+
+    // Always include core fields if they are numeric
+    const coreFields = ['speed', 'altitude', 'course', 'satellites'];
+    coreFields.forEach(f => attrSet.add(f));
+
+    historyData.forEach(feat => {
+        const p = feat.properties;
+        // Add sensor sub-keys
+        if (p.sensors) {
+            Object.entries(p.sensors).forEach(([k, v]) => {
+                if (k !== 'raw' && !isNaN(parseFloat(v))) attrSet.add('sensors.' + k);
+            });
+        }
+    });
+
+    const container = document.getElementById('sensorAttrList');
+    container.innerHTML = '';
+
+    let colorIdx = 0;
+    attrSet.forEach(attr => {
+        const color = SENSOR_COLORS[colorIdx % SENSOR_COLORS.length];
+        colorIdx++;
+
+        const chip = document.createElement('button');
+        chip.className = 'sensor-chip' + (selectedSensorAttrs.has(attr) ? ' selected' : '');
+        chip.dataset.attr = attr;
+        chip.dataset.color = color;
+        chip.style.setProperty('--chip-color', color);
+        chip.textContent = formatAttrLabel(attr);
+        chip.onclick = () => toggleSensorAttr(attr, chip);
+        container.appendChild(chip);
+    });
+
+    renderSensorGraph();
+}
+
+
+function formatAttrLabel(attr) {
+    return attr
+        .replace('sensors.', '')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function toggleSensorAttr(attr, chip) {
+    if (selectedSensorAttrs.has(attr)) {
+        selectedSensorAttrs.delete(attr);
+        chip.classList.remove('selected');
+    } else {
+        selectedSensorAttrs.add(attr);
+        chip.classList.add('selected');
+    }
+    renderSensorGraph();
+}
+
+// ── Render / update the Chart.js graph ────────────────────────
+function renderSensorGraph() {
+    if (!historyData || historyData.length === 0) return;
+
+    const canvas = document.getElementById('sensorChart');
+    const emptyMsg = document.getElementById('sensorChartEmpty');
+
+    if (selectedSensorAttrs.size === 0) {
+        canvas.style.display = 'none';
+        emptyMsg.style.display = 'block';
+        return;
+    }
+    canvas.style.display = 'block';
+    emptyMsg.style.display = 'none';
+
+    // Build labels (timestamps) and datasets
+    const labels = historyData.map(f => {
+        const d = new Date(f.properties.time);
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    });
+
+    const chips = document.querySelectorAll('.sensor-chip.selected');
+    const colorMap = {};
+    chips.forEach(c => { colorMap[c.dataset.attr] = c.dataset.color; });
+
+    const datasets = Array.from(selectedSensorAttrs).map(attr => {
+        const color = colorMap[attr] || '#3b82f6';
+        const data = historyData.map(f => {
+            const p = f.properties;
+            if (attr.startsWith('sensors.')) {
+                const key = attr.slice('sensors.'.length);
+                const val = p.sensors?.[key];
+                return val !== undefined ? parseFloat(val) : null;
+            }
+            const val = p[attr];
+            return val !== undefined ? parseFloat(val) : null;
+        });
+        return {
+            label: formatAttrLabel(attr),
+            data,
+            borderColor: color,
+            backgroundColor: color + '22',
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            tension: 0.3,
+            fill: false,
+            yAxisID: 'y',
+        };
+    });
+
+    if (sensorChart) {
+        sensorChart.data.labels = labels;
+        sensorChart.data.datasets = datasets;
+        sensorChart.update('none');
+    } else {
+        sensorChart = new Chart(canvas, {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            color: '#9ca3af',
+                            font: { family: 'JetBrains Mono', size: 10 },
+                            boxWidth: 12,
+                            padding: 8,
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: '#131825',
+                        borderColor: '#374151',
+                        borderWidth: 1,
+                        titleColor: '#e5e7eb',
+                        bodyColor: '#9ca3af',
+                        titleFont: { family: 'JetBrains Mono', size: 11 },
+                        bodyFont: { family: 'JetBrains Mono', size: 11 },
+                    },
+                    // Vertical cursor line plugin (defined below)
+                    verticalLine: { index: historyIndex }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: '#6b7280',
+                            font: { family: 'JetBrains Mono', size: 9 },
+                            maxTicksLimit: 6,
+                            maxRotation: 0,
+                        },
+                        grid: { color: '#374151' }
+                    },
+                    y: {
+                        ticks: { color: '#6b7280', font: { family: 'JetBrains Mono', size: 10 } },
+                        grid: { color: '#374151' }
+                    }
+                }
+            },
+            plugins: [verticalLinePlugin]
+        });
+    }
+
+    updateSensorChartCursor(historyIndex);
+}
+
+// ── Vertical cursor line plugin ────────────────────────────────
+const verticalLinePlugin = {
+    id: 'verticalLine',
+    afterDraw(chart) {
+        const idx = chart.options.plugins.verticalLine?.index;
+        if (idx == null || !chart.data.labels?.length) return;
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data[idx]) return;
+        const x = meta.data[idx].x;
+        const ctx = chart.ctx;
+        const top = chart.chartArea.top;
+        const bottom = chart.chartArea.bottom;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x, top);
+        ctx.lineTo(x, bottom);
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.restore();
+    }
+};
+
+function updateSensorChartCursor(idx) {
+    if (!sensorChart) return;
+    sensorChart.options.plugins.verticalLine.index = idx;
+    sensorChart.update('none');
 }

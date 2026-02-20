@@ -1119,3 +1119,77 @@ body::before {
     color: var(--accent-primary);
 }
 
+
+/* ═══════════════════════════════════════════════════════════════
+   SENSOR GRAPH STYLES — append to dashboard.css
+   ═══════════════════════════════════════════════════════════════ */
+
+/* History Tab Bar */
+.history-tab-bar {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+}
+
+.history-tab {
+    flex: 1;
+    padding: 0.45rem 0.6rem;
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    text-align: center;
+}
+
+.history-tab:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+}
+
+.history-tab.active {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+/* Sensor Attribute Chips */
+.sensor-chip {
+    padding: 0.3rem 0.65rem;
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.sensor-chip:hover {
+    border-color: var(--chip-color, var(--accent-primary));
+    color: var(--chip-color, var(--accent-primary));
+}
+
+.sensor-chip.selected {
+    background: color-mix(in srgb, var(--chip-color, var(--accent-primary)) 15%, transparent);
+    border-color: var(--chip-color, var(--accent-primary));
+    color: var(--chip-color, var(--accent-primary));
+}
+
+/* Sensor chart canvas container */
+#sensorChart {
+    display: block;
+    height: 200px !important;
+    max-height: 200px;
+}
+
+/* Sensor attr list scrollbar */
+#sensorAttrList::-webkit-scrollbar { height: 4px; width: 4px; }
+#sensorAttrList::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 2px; }
