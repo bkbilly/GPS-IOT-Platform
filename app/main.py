@@ -1,5 +1,5 @@
 """
-FastAPI Application - GPS/IoT Platform
+FastAPI Application - Routario Platform
 Thin entrypoint: app setup, lifespan, WebSocket, and internal callbacks.
 All REST routes live in app/routes/.
 """
@@ -183,7 +183,7 @@ async def handle_new_alert(alert: AlertHistory):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting GPS/IoT Platform...")
+    logger.info("Starting Routario Platform...")
     settings = get_settings()
 
     await init_database(settings.database_url)
@@ -208,21 +208,21 @@ async def lifespan(app: FastAPI):
             logger.info(f"Started TCP Server for {name} on port {port}")
 
     asyncio.create_task(periodic_alert_task())
-    logger.info("GPS/IoT Platform started successfully")
+    logger.info("Routario Platform started successfully")
 
     yield
 
-    logger.info("Shutting down GPS/IoT Platform...")
+    logger.info("Shutting down Routario Platform...")
     db = get_db()
     await db.close()
     await redis_pubsub.close()
-    logger.info("GPS/IoT Platform shutdown complete")
+    logger.info("Routario Platform shutdown complete")
 
 
 # ==================== App ====================
 
 app = FastAPI(
-    title="GPS/IoT Platform API",
+    title="Routario Platform API",
     description="High-performance GPS tracking and IoT platform",
     version="1.0.0",
     lifespan=lifespan,

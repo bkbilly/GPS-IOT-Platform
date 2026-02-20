@@ -13,7 +13,7 @@ async def main():
     """Initialize database schema"""
     settings = get_settings()
     
-    print("=== GPS/IoT Platform Database Initialization ===\n")
+    print("=== Routario Platform Database Initialization ===\n")
     print(f"Database URL: {settings.database_url.replace('password', '***')}\n")
     
     try:

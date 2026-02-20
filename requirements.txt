@@ -1,4 +1,4 @@
-# GPS/IoT Platform - Requirements
+# Routario Platform - Requirements
 # Python 3.10+
 
 # Core Async Runtime

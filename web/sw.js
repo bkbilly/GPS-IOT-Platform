@@ -1,5 +1,5 @@
 /**
- * GPS Dashboard - Service Worker
+ * Routario - Service Worker
  * Handles PWA caching and push notification delivery
  * Place this file at: /web/sw.js  (root of your web directory)
  */

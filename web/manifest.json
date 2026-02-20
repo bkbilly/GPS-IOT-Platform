@@ -1,6 +1,6 @@
 {
-  "name": "GPS Tracking Dashboard",
-  "short_name": "GPS Tracker",
+  "name": "Routario Platform",
+  "short_name": "Routario",
   "description": "Real-time GPS device tracking and alerts",
   "start_url": "/gps-dashboard.html",
   "display": "standalone",

@@ -1,5 +1,5 @@
 """
-Pydantic Schemas - GPS/IoT Platform
+Pydantic Schemas - Routario Platform
 Request/Response models with validation
 """
 from datetime import datetime

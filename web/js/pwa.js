@@ -1,5 +1,5 @@
 /**
- * GPS Dashboard - PWA & Push Notification Manager
+ * Routario - PWA & Push Notification Manager
  * Place this file at: /web/js/pwa.js
  */
 
@@ -115,7 +115,7 @@ function showInstallBanner() {
     ">
       <span style="font-size: 2rem;">📱</span>
       <div style="flex: 1;">
-        <div style="font-weight: 700; color: var(--text-primary, #f1f5f9); font-size: 0.95rem;">Install GPS Dashboard</div>
+        <div style="font-weight: 700; color: var(--text-primary, #f1f5f9); font-size: 0.95rem;">Install Routario</div>
         <div style="font-size: 0.8rem; color: var(--text-muted, #94a3b8); margin-top: 0.2rem;">Add to your home screen for quick access</div>
       </div>
       <button onclick="triggerInstall()" style="background: var(--accent-primary, #3b82f6); color: white; border: none; border-radius: 8px; padding: 0.5rem 1rem; font-weight: 600; cursor: pointer; font-size: 0.875rem;">Install</button>

@@ -1,5 +1,5 @@
 [Unit]
-Description=GPS/IoT Platform - High-Performance Tracking System
+Description=Routario Platform - High-Performance Tracking System
 After=network.target postgresql.service redis.service
 Requires=postgresql.service redis.service
 

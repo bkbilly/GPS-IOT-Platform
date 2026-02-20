@@ -25,7 +25,7 @@ class GeocodingService:
         self.redis_client: Optional[redis.Redis] = None
         
         # Initialize geocoder (blocking, will run in executor)
-        self.geocoder = Nominatim(user_agent="gps-iot-platform")
+        self.geocoder = Nominatim(user_agent="routario-platform")
     
     async def connect(self):
         """Connect to Redis"""

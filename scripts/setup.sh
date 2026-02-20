@@ -1,10 +1,10 @@
 #!/bin/bash
-# Quick Setup Script for GPS/IoT Platform
+# Quick Setup Script for Routario Platform
 # Ubuntu/Debian
 
 set -e
 
-echo "=== GPS/IoT Platform - Quick Setup ==="
+echo "=== Routario Platform - Quick Setup ==="
 echo ""
 
 # Colors

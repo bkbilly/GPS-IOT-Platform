@@ -1,4 +1,4 @@
--- GPS/IoT Platform - Database Setup Script
+-- Routario Platform - Database Setup Script
 -- Run this as postgres superuser
 
 -- Create database

@@ -1,5 +1,5 @@
 """
-Database Models - GPS/IoT Platform
+Database Models - Routario Platform
 Optimized for PostgreSQL + PostGIS with async SQLAlchemy 2.0
 """
 from datetime import datetime, timedelta
