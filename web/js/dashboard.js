@@ -349,25 +349,18 @@ async function loadTripsForHistory(deviceId, startTime, endTime) {
             const dur   = formatDuration(trip.duration_minutes);
             const from  = trip.start_address || 'Unknown start';
             const to    = trip.end_address   || (trip.end_time ? 'Unknown end' : 'In progress');
+            const label = trips.length - i;
 
             return `
             <div class="trip-card" onclick="seekToTrip('${trip.start_time}')" title="Click to jump to this trip">
                 <div class="trip-card-header">
-                    <span class="trip-index">Trip ${i + 1}</span>
+                    <span class="trip-index">Trip ${label}</span>
                     <span class="trip-badges">
                         <span class="trip-badge">📍 ${dist}</span>
                         <span class="trip-badge">⏱ ${dur}</span>
                     </span>
                 </div>
                 <div class="trip-card-body">
-                    <div class="trip-row">
-                        <span class="trip-label">From</span>
-                        <span class="trip-value">${from}</span>
-                    </div>
-                    <div class="trip-row">
-                        <span class="trip-label">To</span>
-                        <span class="trip-value">${to}</span>
-                    </div>
                     <div class="trip-time">${start} → ${end}</div>
                 </div>
             </div>`;
@@ -845,7 +838,7 @@ function updatePlaybackUI() {
     const currentTrip = getCurrentTripForPoint(p.time);
     if (tripLabel) {
         if (currentTrip) {
-            const tripIndex = historyTrips.indexOf(currentTrip) + 1;
+            const tripIndex = historyTrips.length - historyTrips.indexOf(currentTrip);
             const dist = currentTrip.distance_km != null ? ` · ${currentTrip.distance_km.toFixed(1)} km` : '';
             tripLabel.textContent = `Trip ${tripIndex}${dist}`;
         } else {

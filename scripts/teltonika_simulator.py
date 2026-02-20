@@ -108,7 +108,7 @@ class TeltonikaSimulator:
         # IO Data Preparation
         # 1 Byte IOs
         io_1b_data = [
-            (239, 1), # Ignition (ID 239) = 1 (ON)
+            (239, 0), # Ignition (ID 239) = 1 (ON)
             (1, digital_input_1), # DIN1 (ID 1)
             (69, 1)   # GNSS Status (ID 69)
         ]
