@@ -87,7 +87,9 @@ let deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredInstallPrompt = e;
-  showInstallBanner();
+  if (!localStorage.getItem('pwa_install_dismissed')) {
+    showInstallBanner();
+  }
 });
 
 window.addEventListener('appinstalled', () => {
